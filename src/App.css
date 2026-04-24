@@ -1,0 +1,221 @@
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 0.75rem;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.top-bar p {
+  margin: 0.2rem 0 0;
+  color: #4b5563;
+}
+
+.top-bar-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+select,
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button,
+select,
+input,
+textarea,
+.modal {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+
+button {
+  background: #16a34a;
+  color: #ffffff;
+  padding: 0.6rem 0.9rem;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.map {
+  width: 100%;
+  height: calc(100vh - 130px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+}
+
+.toilet-marker {
+  font-size: 24px;
+  text-align: center;
+}
+
+.user-marker {
+  font-size: 24px;
+  text-align: center;
+}
+
+.status {
+  margin: 0;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  color: #0f766e;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+}
+
+.status.error {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.status.warning {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 41, 55, 0.42);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.modal {
+  width: min(500px, 100%);
+  background: #ffffff;
+  padding: 1rem;
+  border-radius: 12px;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.modal h2,
+.popup-content h3 {
+  margin: 0;
+}
+
+.coordinates {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.88rem;
+}
+
+.modal label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.modal input,
+.modal textarea,
+.top-bar select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+}
+
+.hint {
+  color: #2563eb;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.popup-form {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 250px;
+}
+
+.popup-form h3 {
+  margin: 0;
+}
+
+.popup-form label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.popup-form input,
+.popup-form textarea {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+}
+
+.secondary {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.stars {
+  margin: 0.35rem 0;
+  letter-spacing: 2px;
+}
+
+.star-filled {
+  color: #f59e0b;
+}
+
+.star-empty {
+  color: #d1d5db;
+}
+
+.gallery {
+  display: flex;
+  gap: 0.45rem;
+  margin: 0.4rem 0;
+  overflow-x: auto;
+}
+
+.gallery img {
+  width: 78px;
+  height: 78px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+@media (max-width: 768px) {
+  .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .top-bar-actions {
+    width: 100%;
+  }
+
+  .map {
+    height: calc(100vh - 185px);
+  }
+}
