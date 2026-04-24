@@ -237,7 +237,9 @@ function App() {
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
   const [anchoredModalStyle, setAnchoredModalStyle] = useState({})
   const [showBelowPin, setShowBelowPin] = useState(false)
-  const [theme, setTheme] = useState(() => localStorage.getItem('loo-theme') || 'light')
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem('whatsnearby-theme') || localStorage.getItem('loo-theme') || 'light',
+  )
   const [routeCoords, setRouteCoords] = useState([])
   const [routeSummary, setRouteSummary] = useState(null)
   const [routingForPinId, setRoutingForPinId] = useState(null)
@@ -447,7 +449,7 @@ function App() {
   }
 
   useEffect(() => {
-    localStorage.setItem('loo-theme', theme)
+    localStorage.setItem('whatsnearby-theme', theme)
   }, [theme])
 
   const openEditPinForm = (pin) => {
@@ -760,12 +762,12 @@ function App() {
               <span className="hero-pill">Community-first</span>
               <span className="hero-pill">Realtime mapping</span>
             </div>
-            <h1>Loo Locator</h1>
+            <h1>whatsnearby</h1>
             <p>
               Choose a map category to start exploring community-based location intelligence.
             </p>
             <p className="landing-subtext">
-              Built for everyday convenience, Loo Locator helps people quickly find clean restroom
+              Built for everyday convenience, whatsnearby helps people quickly find clean restroom
               spots, compare details, and navigate with confidence.
             </p>
             <label className="theme-toggle" aria-label="Toggle dark mode">
@@ -878,7 +880,7 @@ function App() {
             <article className="trust-card">
               <h3>Designed for real-world use</h3>
               <p>
-                Loo Locator balances clean visuals, practical details, and quick routing so users can
+                whatsnearby balances clean visuals, practical details, and quick routing so users can
                 confidently decide where to go next.
               </p>
             </article>
@@ -893,7 +895,7 @@ function App() {
 
           <footer className="landing-footer scenic-footer">
             <div>
-              <strong>Loo Locator</strong>
+              <strong>whatsnearby</strong>
               <p>Helping communities discover clean and accessible public restrooms.</p>
             </div>
             <div className="footer-meta">
@@ -911,7 +913,7 @@ function App() {
     <main className={`app-shell ${theme === 'dark' ? 'dark' : ''}`}>
       <header className="top-bar">
         <div className="brand-block">
-          <h1>Loo Locator</h1>
+          <h1>whatsnearby</h1>
           <p>Click map to pin, then fill the popup form.</p>
         </div>
         <div className="top-bar-actions">

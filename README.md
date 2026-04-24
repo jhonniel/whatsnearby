@@ -1,6 +1,6 @@
-# Loo Locator
+# whatsnearby
 
-Loo Locator is a React + Firebase web app for discovering, pinning, and navigating to public toilet locations on an interactive map.
+whatsnearby is a React + Firebase web app for discovering, pinning, and navigating to public toilet locations on an interactive map.
 
 It includes a professional landing experience, map category tiles, mobile-responsive UI, authentication for secure pin updates, and community-focused map data.
 
