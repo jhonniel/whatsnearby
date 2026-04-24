@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:admin": "node scripts/seed-admin.mjs",
+    "rebuild:favicon": "node scripts/rebuild-favicon.mjs"
   },
   "dependencies": {
     "firebase": "^12.12.1",
     "leaflet": "^1.9.4",
+    "lucide-react": "^1.11.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-leaflet": "^5.0.0",
@@ -25,7 +28,9 @@
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-admin": "^13.0.2",
     "globals": "^17.5.0",
+    "sharp": "^0.34.5",
     "vite": "^8.0.10"
   }
 }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection,
+  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -15,16 +17,39 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import { Bath, Droplets, MirrorRound, Moon, ShowerHead, Sun, Toilet } from 'lucide-react'
 import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
+import { LandingPage } from './LandingPage'
+
+const EXTRA_ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
 
 const DEFAULT_CENTER = [7.0731, 125.6128]
 
 const toiletIcon = L.divIcon({
   className: 'toilet-marker',
   html: '<span role="img" aria-label="Toilet">🚽</span>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+  popupAnchor: [0, -28],
+})
+
+const restaurantIcon = L.divIcon({
+  className: 'toilet-marker',
+  html: '<span role="img" aria-label="Restaurant or cafe">🍽️</span>',
+  iconSize: [28, 28],
+  iconAnchor: [14, 28],
+  popupAnchor: [0, -28],
+})
+
+const tambayanIcon = L.divIcon({
+  className: 'toilet-marker',
+  html: '<span role="img" aria-label="Tambayan spot">🌙</span>',
   iconSize: [28, 28],
   iconAnchor: [14, 28],
   popupAnchor: [0, -28],
@@ -37,108 +62,165 @@ const userIcon = L.icon({
   popupAnchor: [0, -56],
 })
 
-const mapCatalog = [
-  {
-    id: 'loo-finder',
-    title: 'Loo Finder Map',
-    category: 'Sanitation',
-    description: 'Find and pin nearby public restrooms with ratings, directions, and details.',
-    status: 'available',
-  },
-  {
-    id: 'water-refill',
-    title: 'Water Refill Map',
-    category: 'Utilities',
-    description: 'Community map for potable water refill stations.',
-    status: 'coming-soon',
-  },
-  {
-    id: 'accessibility',
-    title: 'Accessibility Map',
-    category: 'Mobility',
-    description: 'Map for ramps, elevators, and accessibility-friendly routes.',
-    status: 'coming-soon',
-  },
+const COMMUNITY_OVERVIEW_COLLECTIONS = ['loos', 'restaurants_cafes', 'tambayan_24h']
+
+/** When adding a pin on the merged map, user picks one of these Firestore collections. */
+const COMMUNITY_CREATE_CATEGORIES = [
+  { collection: 'loos', label: 'Loo Finder — restrooms & sanitation' },
+  { collection: 'restaurants_cafes', label: 'Restaurants & Cafe' },
+  { collection: 'tambayan_24h', label: 'Tambayan 24hrs — late-night hangouts' },
 ]
 
-const landingStats = [
-  { label: 'Mapped Locations', value: '1,250+' },
-  { label: 'Community Contributors', value: '320+' },
-  { label: 'Monthly Directions', value: '9,800+' },
-  { label: 'Cities Covered', value: '18' },
-]
+const MAP_REGISTRY = {
+  'community-map': {
+    path: '/community-map',
+    firestoreCollection: null,
+    mergeCollections: COMMUNITY_OVERVIEW_COLLECTIONS,
+    mapTitle: 'All community pins',
+    tagline:
+      'Browse every pin neighbors shared. Click the map to add one—then choose whether it belongs on Loo Finder, Restaurants & Cafe, or Tambayan 24hrs.',
+    pinIcon: toiletIcon,
+  },
+  'loo-finder': {
+    path: '/loo-finder-map',
+    firestoreCollection: 'loos',
+    mapTitle: 'Loo Finder',
+    tagline: 'Click map to pin a restroom, then fill the popup form.',
+    pinIcon: toiletIcon,
+  },
+  'restaurants-cafe': {
+    path: '/restaurants-cafe-map',
+    firestoreCollection: 'restaurants_cafes',
+    mapTitle: 'Restaurants & Cafe',
+    tagline: 'Click map to pin a spot, then fill the popup form.',
+    pinIcon: restaurantIcon,
+  },
+  'tambayan-24hrs': {
+    path: '/tambayan-24hrs-map',
+    firestoreCollection: 'tambayan_24h',
+    mapTitle: 'Tambayan 24hrs',
+    tagline: 'Click map to pin a 24hr hangout, then fill the popup form.',
+    pinIcon: tambayanIcon,
+  },
+  'water-refill': {
+    path: '/water-refill-map',
+    firestoreCollection: null,
+    mapTitle: 'Water Refill',
+    tagline: '',
+    pinIcon: toiletIcon,
+  },
+  accessibility: {
+    path: '/accessibility-map',
+    firestoreCollection: null,
+    mapTitle: 'Accessibility',
+    tagline: '',
+    pinIcon: toiletIcon,
+  },
+}
 
-const processSteps = [
-  {
-    title: 'Select a map',
-    text: 'Choose a map category and preview your nearby area before opening it.',
-  },
-  {
-    title: 'Pin useful locations',
-    text: 'Add verified location details including landmarks, pricing, and rating.',
-  },
-  {
-    title: 'Navigate quickly',
-    text: 'Use built-in best-route guidance to reach the selected location fast.',
-  },
-]
+/** Wi‑Fi / network fixes; generous timeout + cached fixes reduce false timeouts. */
+const GEOLOCATION_READ_OPTIONS = {
+  enableHighAccuracy: false,
+  maximumAge: 300_000,
+  timeout: 90_000,
+}
+
+/** Second attempt after TIMEOUT: allow very stale cache and wait longer. */
+const GEOLOCATION_RETRY_OPTIONS = {
+  enableHighAccuracy: false,
+  /* Any cached fix is OK on retry so the browser can answer immediately */
+  maximumAge: 86_400_000,
+  timeout: 120_000,
+}
 
 function mapIdToPath(mapId) {
-  if (mapId === 'loo-finder') return '/loo-finder-map'
-  if (mapId === 'water-refill') return '/water-refill-map'
-  if (mapId === 'accessibility') return '/accessibility-map'
-  return '/'
+  return MAP_REGISTRY[mapId]?.path ?? '/'
 }
 
 function pathToMapId(pathname) {
-  if (pathname === '/loo-finder-map') return 'loo-finder'
-  if (pathname === '/water-refill-map') return 'water-refill'
-  if (pathname === '/accessibility-map') return 'accessibility'
-  return null
+  const entry = Object.entries(MAP_REGISTRY).find(([, cfg]) => cfg.path === pathname)
+  return entry ? entry[0] : null
 }
 
-function LandingMapPreview({ location, theme }) {
-  if (!location) {
-    return (
-      <div className="map-preview-fallback">
-        Enable location to preview nearby map area
-      </div>
-    )
-  }
+function pinsCollectionForMapId(mapId) {
+  return MAP_REGISTRY[mapId]?.firestoreCollection ?? null
+}
 
-  return (
-    <MapContainer
-      center={location}
-      zoom={13}
-      className="map-preview-live"
-      zoomControl={false}
-      dragging={false}
-      doubleClickZoom={false}
-      scrollWheelZoom={false}
-      touchZoom={false}
-      boxZoom={false}
-      keyboard={false}
-      attributionControl={false}
-    >
-      <TileLayer
-        url={
-          theme === 'dark'
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-        }
-      />
-      <CircleMarker
-        center={location}
-        radius={7}
-        pathOptions={{
-          color: '#ffffff',
-          weight: 2,
-          fillColor: '#ef4444',
-          fillOpacity: 1,
-        }}
-      />
-    </MapContainer>
-  )
+function mergeCollectionsForMapId(mapId) {
+  return MAP_REGISTRY[mapId]?.mergeCollections ?? null
+}
+
+function pinFirestoreCollection(pin) {
+  return pin.collection || null
+}
+
+function markerIconForPin(pin, fallbackIcon) {
+  const c = pinFirestoreCollection(pin)
+  if (c === 'restaurants_cafes') return restaurantIcon
+  if (c === 'tambayan_24h') return tambayanIcon
+  return fallbackIcon ?? toiletIcon
+}
+
+function pinBusyKey(pin) {
+  return `${pinFirestoreCollection(pin) ?? 'local'}:${pin.id}`
+}
+
+function mapLayerLabel(collection) {
+  if (collection === 'restaurants_cafes') return 'Restaurants & Cafe'
+  if (collection === 'tambayan_24h') return 'Tambayan 24hrs'
+  if (collection === 'loos') return 'Loo Finder'
+  return 'Map pin'
+}
+
+/** Treat existing `rating` as one vote when ratingCount / ratingSum are missing. */
+function ratingStatsFromDocData(data) {
+  const raw = Number(data?.rating)
+  const fallbackStar =
+    Number.isFinite(raw) && raw >= 1 && raw <= 5 ? Math.round(raw) : 3
+  const prevCount =
+    Number.isFinite(Number(data?.ratingCount)) && Number(data.ratingCount) >= 1
+      ? Math.floor(Number(data.ratingCount))
+      : 1
+  const prevSum = Number.isFinite(Number(data?.ratingSum))
+    ? Number(data.ratingSum)
+    : fallbackStar * prevCount
+  return { prevCount, prevSum }
+}
+
+function clampStarRating(n) {
+  const x = Math.round(Number(n))
+  if (Number.isNaN(x)) return 3
+  return Math.min(5, Math.max(1, x))
+}
+
+const LOO_AMENITY_FIELDS = [
+  { key: 'bidet', label: 'BeDiet', Icon: Bath },
+  { key: 'shower', label: 'Shower', Icon: ShowerHead },
+  { key: 'cleanWater', label: 'Clean Water', Icon: Droplets },
+  { key: 'cleanToilet', label: 'Clean Toilet', Icon: Toilet },
+  { key: 'mirror', label: 'Mirror', Icon: MirrorRound },
+]
+
+function loosAmenityValues(form) {
+  return {
+    bidet: Boolean(form.bidet),
+    shower: Boolean(form.shower),
+    cleanWater: Boolean(form.cleanWater),
+    cleanToilet: Boolean(form.cleanToilet),
+    mirror: Boolean(form.mirror),
+  }
+}
+
+function shouldIncludeLoosAmenities({
+  formMode,
+  activeMapId,
+  newPinCategory,
+  editingPinCollection,
+}) {
+  if (activeMapId === 'loo-finder') return true
+  if (activeMapId !== 'community-map') return false
+  if (formMode === 'edit') return editingPinCollection === 'loos'
+  return newPinCategory === 'loos'
 }
 
 function Stars({ value }) {
@@ -153,11 +235,11 @@ function Stars({ value }) {
   )
 }
 
-function LocateMap({ center }) {
+function LocateMap({ center, zoom = 14 }) {
   const map = useMap()
   useEffect(() => {
-    map.setView(center, 15)
-  }, [center, map])
+    map.setView(center, zoom)
+  }, [center, map, zoom])
   return null
 }
 
@@ -220,6 +302,7 @@ function distanceInMeters(lat1, lon1, lat2, lon2) {
 
 function App() {
   const mapShellRef = useRef(null)
+  const activeMapIdRef = useRef(null)
   const [remotePins, setRemotePins] = useState([])
   const [localPins, setLocalPins] = useState([])
   const [mapCenter, setMapCenter] = useState(DEFAULT_CENTER)
@@ -245,6 +328,8 @@ function App() {
   const [routingForPinId, setRoutingForPinId] = useState(null)
   const [activeMapId, setActiveMapId] = useState(() => pathToMapId(window.location.pathname))
   const [currentUser, setCurrentUser] = useState(null)
+  const [docAdmin, setDocAdmin] = useState(false)
+  const [adminBusyPinId, setAdminBusyPinId] = useState(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
@@ -253,6 +338,9 @@ function App() {
   const [pendingEditPin, setPendingEditPin] = useState(null)
   const [formMode, setFormMode] = useState('create')
   const [editingPinId, setEditingPinId] = useState(null)
+  const [editingPinCollection, setEditingPinCollection] = useState(null)
+  const [newPinCategory, setNewPinCategory] = useState('')
+  const [quickRatingBusyKey, setQuickRatingBusyKey] = useState(null)
   const [form, setForm] = useState({
     name: '',
     nearbyLandmarks: '',
@@ -261,6 +349,11 @@ function App() {
     isFree: false,
     details: '',
     images: [],
+    bidet: false,
+    shower: false,
+    cleanWater: false,
+    cleanToilet: false,
+    mirror: false,
   })
 
   useEffect(() => {
@@ -287,31 +380,113 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!hasFirebaseConfig) {
+    if (!hasFirebaseConfig || !db || !currentUser) {
       return undefined
     }
-
-    const q = query(collection(db, 'loos'), orderBy('createdAt', 'desc'))
+    const adminRef = doc(db, 'admins', currentUser.uid)
     const unsubscribe = onSnapshot(
-      q,
+      adminRef,
       (snapshot) => {
-        const nextRemotePins = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }))
-        const remoteIds = new Set(nextRemotePins.map((pin) => pin.id))
-        setRemotePins(nextRemotePins)
-        setLocalPins((current) => current.filter((pin) => !remoteIds.has(pin.id)))
-        setLoadingPins(false)
+        setDocAdmin(snapshot.exists())
       },
       () => {
-        setError('Unable to read Firebase data. Local pin mode is still available.')
-        setLoadingPins(false)
+        setDocAdmin(false)
       },
     )
+    return () => {
+      unsubscribe()
+      setDocAdmin(false)
+    }
+  }, [currentUser])
 
-    return unsubscribe
-  }, [])
+  useEffect(() => {
+    let unsubscribe = () => {}
+    const frameId = requestAnimationFrame(() => {
+      setRemotePins([])
+      setLocalPins([])
+      setRouteCoords([])
+      setRouteSummary(null)
+      setSelectedLocation(null)
+      setSelectedScreenPos(null)
+      setFormMode('create')
+      setEditingPinId(null)
+      setEditingPinCollection(null)
+      setNewPinCategory('')
+      setFilterRating('all')
+
+      if (!hasFirebaseConfig) {
+        setLoadingPins(false)
+        return
+      }
+
+      const mergeCols = mergeCollectionsForMapId(activeMapId)
+      if (mergeCols && mergeCols.length > 0) {
+        setLoadingPins(true)
+        const slices = {}
+        const pushMerged = () => {
+          const merged = mergeCols.flatMap((c) => slices[c] ?? [])
+          const remoteKeys = new Set(merged.map((p) => pinBusyKey(p)))
+          setRemotePins(merged)
+          setLocalPins((current) => current.filter((pin) => !remoteKeys.has(pinBusyKey(pin))))
+          setLoadingPins(false)
+        }
+        const unsubs = mergeCols.map((collName) => {
+          const q = query(collection(db, collName), orderBy('createdAt', 'desc'))
+          return onSnapshot(
+            q,
+            (snapshot) => {
+              slices[collName] = snapshot.docs.map((item) => ({
+                ...item.data(),
+                id: item.id,
+                collection: collName,
+              }))
+              pushMerged()
+            },
+            () => {
+              setError('Unable to read Firebase data. Local pin mode is still available.')
+              slices[collName] = []
+              pushMerged()
+            },
+          )
+        })
+        unsubscribe = () => {
+          unsubs.forEach((u) => u())
+        }
+      } else {
+        const coll = pinsCollectionForMapId(activeMapId)
+        if (!coll) {
+          setLoadingPins(false)
+          return
+        }
+
+        setLoadingPins(true)
+        const q = query(collection(db, coll), orderBy('createdAt', 'desc'))
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const nextRemotePins = snapshot.docs.map((item) => ({
+              ...item.data(),
+              id: item.id,
+              collection: coll,
+            }))
+            const remoteKeys = new Set(nextRemotePins.map((pin) => pinBusyKey(pin)))
+            setRemotePins(nextRemotePins)
+            setLocalPins((current) => current.filter((pin) => !remoteKeys.has(pinBusyKey(pin))))
+            setLoadingPins(false)
+          },
+          () => {
+            setError('Unable to read Firebase data. Local pin mode is still available.')
+            setLoadingPins(false)
+          },
+        )
+      }
+    })
+
+    return () => {
+      cancelAnimationFrame(frameId)
+      unsubscribe()
+    }
+  }, [activeMapId])
 
   useEffect(() => {
     if (!navigator.geolocation) return
@@ -322,35 +497,109 @@ function App() {
         setUserLocation(current)
       },
       () => {},
-      { enableHighAccuracy: true, timeout: 10000 },
+      GEOLOCATION_READ_OPTIONS,
     )
   }, [])
 
+  useEffect(() => {
+    activeMapIdRef.current = activeMapId
+  }, [activeMapId])
+
+  useEffect(() => {
+    if (!navigator.geolocation) return undefined
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const current = [position.coords.latitude, position.coords.longitude]
+        setUserLocation(current)
+        if (activeMapIdRef.current) {
+          setMapCenter(current)
+        }
+      },
+      () => {},
+      {
+        enableHighAccuracy: false,
+        maximumAge: 300_000,
+        timeout: 120_000,
+      },
+    )
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [])
+
+  useEffect(() => {
+    if (!activeMapId || !userLocation) return undefined
+    const id = requestAnimationFrame(() => setMapCenter(userLocation))
+    return () => cancelAnimationFrame(id)
+  }, [activeMapId, userLocation])
+
+  const envAdmin = Boolean(
+    currentUser && EXTRA_ADMIN_UIDS.includes(currentUser.uid),
+  )
+  const isAdmin = envAdmin || docAdmin
+
   const pins = useMemo(() => [...localPins, ...remotePins], [localPins, remotePins])
+  const activePinsCollection = useMemo(() => pinsCollectionForMapId(activeMapId), [activeMapId])
+  const activeMapConfig = MAP_REGISTRY[activeMapId] ?? MAP_REGISTRY['loo-finder']
+  const pinMarkerIcon = activeMapConfig.pinIcon ?? toiletIcon
+
   const visiblePins = useMemo(() => {
     if (filterRating === 'all') return pins
     return pins.filter((pin) => pin.rating >= Number(filterRating))
   }, [pins, filterRating])
 
+  const showLooAmenitiesFieldset = useMemo(
+    () =>
+      shouldIncludeLoosAmenities({
+        formMode,
+        activeMapId,
+        newPinCategory,
+        editingPinCollection,
+      }),
+    [formMode, activeMapId, newPinCategory, editingPinCollection],
+  )
+
   const locateMe = () => {
-    if (!navigator.geolocation) return
+    if (!navigator.geolocation) {
+      setError('This browser does not support location.')
+      return
+    }
     setIsLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const current = [position.coords.latitude, position.coords.longitude]
-        setMapCenter(current)
-        setUserLocation(current)
-        setIsLocating(false)
-      },
-      () => {
-        setIsLocating(false)
-        setError('Unable to fetch your location.')
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    )
+    setError('')
+
+    const finishError = (err) => {
+      setIsLocating(false)
+      const code = err?.code
+      if (code === 1) {
+        setError('Location permission was blocked. Allow location for this site in your browser settings.')
+      } else if (code === 2) {
+        setError('Your device could not determine position. Try again, disable VPN, or use mobile data / GPS.')
+      } else if (code === 3) {
+        setError(
+          'Location is still loading or unavailable on this network. Wait up to two minutes and tap Locate Me again, try another network, or open the site over HTTPS (not a raw LAN IP).',
+        )
+      } else {
+        setError('Unable to fetch your location. Try again in a moment.')
+      }
+    }
+
+    const onOk = (position) => {
+      const current = [position.coords.latitude, position.coords.longitude]
+      setMapCenter(current)
+      setUserLocation(current)
+      setIsLocating(false)
+      setError('')
+    }
+
+    navigator.geolocation.getCurrentPosition(onOk, (err) => {
+      if (err?.code === 3) {
+        navigator.geolocation.getCurrentPosition(onOk, finishError, GEOLOCATION_RETRY_OPTIONS)
+        return
+      }
+      finishError(err)
+    }, GEOLOCATION_READ_OPTIONS)
   }
 
-  const reverseGeocode = async (lat, lng) => {
+  const reverseGeocode = async (lat, lng, options = {}) => {
+    const mergeForm = options.mergeForm !== false
     setReverseLookupLoading(true)
     try {
       const response = await fetch(
@@ -402,18 +651,20 @@ function App() {
         return { blocked: true }
       }
 
-      const autoName =
-        data?.name ||
-        data?.address?.road ||
-        data?.address?.pedestrian ||
-        data?.address?.neighbourhood ||
-        data?.address?.suburb ||
-        ''
-      setForm((current) => ({
-        ...current,
-        name: current.name || autoName,
-        nearbyLandmarks: current.nearbyLandmarks || data?.display_name || '',
-      }))
+      if (mergeForm) {
+        const autoName =
+          data?.name ||
+          data?.address?.road ||
+          data?.address?.pedestrian ||
+          data?.address?.neighbourhood ||
+          data?.address?.suburb ||
+          ''
+        setForm((current) => ({
+          ...current,
+          name: current.name || autoName,
+          nearbyLandmarks: current.nearbyLandmarks || data?.display_name || '',
+        }))
+      }
       return { blocked: false }
     } catch {
       setError('Could not fetch nearby landmark automatically.')
@@ -428,8 +679,21 @@ function App() {
     setNotice('')
     setFormError('')
     setSaving(false)
+
+    if (formMode === 'edit' && editingPinId && currentUser) {
+      const reverseResult = await reverseGeocode(latlng.lat, latlng.lng, { mergeForm: false })
+      if (reverseResult?.blocked) {
+        setError('Location cannot be pinned (sea/lake/river).')
+        return
+      }
+      setSelectedLocation(latlng)
+      return
+    }
+
     setFormMode('create')
     setEditingPinId(null)
+    setEditingPinCollection(null)
+    setNewPinCategory('')
     setForm({
       name: '',
       nearbyLandmarks: '',
@@ -438,6 +702,11 @@ function App() {
       isFree: false,
       details: '',
       images: [],
+      bidet: false,
+      shower: false,
+      cleanWater: false,
+      cleanToilet: false,
+      mirror: false,
     })
     const reverseResult = await reverseGeocode(latlng.lat, latlng.lng)
     if (reverseResult?.blocked) {
@@ -461,8 +730,17 @@ function App() {
       return
     }
 
+    if (!isAdmin) {
+      if (pin.ownerUid && pin.ownerUid !== currentUser.uid) {
+        setError('Only the account that created this pin can update it.')
+        return
+      }
+    }
+
     setFormMode('edit')
     setEditingPinId(pin.id)
+    setNewPinCategory('')
+    setEditingPinCollection(pinFirestoreCollection(pin) || activePinsCollection || null)
     setSelectedLocation({ lat: pin.latitude, lng: pin.longitude })
     setForm({
       name: pin.name || '',
@@ -472,6 +750,11 @@ function App() {
       isFree: Boolean(pin.isFree),
       details: pin.details || '',
       images: [],
+      bidet: Boolean(pin.bidet),
+      shower: Boolean(pin.shower),
+      cleanWater: Boolean(pin.cleanWater),
+      cleanToilet: Boolean(pin.cleanToilet),
+      mirror: Boolean(pin.mirror),
     })
     setFormError('')
     setError('')
@@ -530,7 +813,7 @@ function App() {
 
     setError('')
     setNotice('')
-    setRoutingForPinId(pin.id)
+    setRoutingForPinId(pinBusyKey(pin))
 
     try {
       const [startLat, startLng] = userLocation
@@ -549,7 +832,7 @@ function App() {
       const data = await response.json()
       const routes = Array.isArray(data?.routes) ? data.routes : []
       if (!routes.length) {
-        throw new Error('No route found to this loo.')
+        throw new Error('No route found to this destination.')
       }
 
       // OSRM returns fastest route first; re-check by duration.
@@ -572,6 +855,104 @@ function App() {
     }
   }
 
+  const submitAnonymousRating = async (pin, stars) => {
+    const coll = pinFirestoreCollection(pin) || activePinsCollection
+    if (!coll || pin.localOnly || !hasFirebaseConfig || !db) return
+    const key = pinBusyKey(pin)
+    setQuickRatingBusyKey(key)
+    setError('')
+    setNotice('')
+    try {
+      const ref = doc(db, coll, pin.id)
+      const snap = await getDoc(ref)
+      if (!snap.exists()) {
+        setError('That pin could not be found.')
+        return
+      }
+      const d = snap.data()
+      const { prevCount, prevSum } = ratingStatsFromDocData(d)
+      const vote = clampStarRating(stars)
+      const newCount = prevCount + 1
+      const newSum = prevSum + vote
+      const newRating = clampStarRating(newSum / newCount)
+
+      await withTimeout(
+        updateDoc(ref, {
+          rating: newRating,
+          ratingCount: newCount,
+          ratingSum: newSum,
+          updatedAt: serverTimestamp(),
+        }),
+        10000,
+        'Rating update timed out.',
+      )
+
+      setRemotePins((current) =>
+        current.map((p) =>
+          pinBusyKey(p) === key
+            ? { ...p, rating: newRating, ratingCount: newCount, ratingSum: newSum }
+            : p,
+        ),
+      )
+      setNotice('Thanks—your rating was added (averaged with others, 1–5 stars).')
+    } catch (e) {
+      setError(e?.message || 'Could not save rating.')
+    } finally {
+      setQuickRatingBusyKey(null)
+    }
+  }
+
+  const verifyPinAsAdmin = async (pin) => {
+    const coll = pinFirestoreCollection(pin) || activePinsCollection
+    if (!coll || !isAdmin || !hasFirebaseConfig || !db || !auth?.currentUser || pin.localOnly) return
+    setAdminBusyPinId(pinBusyKey(pin))
+    setError('')
+    setNotice('')
+    try {
+      await withTimeout(
+        updateDoc(doc(db, coll, pin.id), {
+          verified: true,
+          verifiedAt: serverTimestamp(),
+          verifiedByUid: auth.currentUser.uid,
+        }),
+        10000,
+        'Verification timed out.',
+      )
+      setNotice('Pin marked as verified.')
+    } catch (verifyError) {
+      setError(verifyError?.message || 'Could not verify pin.')
+    } finally {
+      setAdminBusyPinId(null)
+    }
+  }
+
+  const deletePinAsAdmin = async (pin) => {
+    if (!isAdmin) return
+    const coll = pinFirestoreCollection(pin) || activePinsCollection
+    if (!pin.localOnly && !coll) return
+    if (!window.confirm(`Delete “${pin.name}” permanently?`)) return
+    setAdminBusyPinId(pinBusyKey(pin))
+    setError('')
+    setNotice('')
+    try {
+      if (pin.localOnly) {
+        setLocalPins((current) => current.filter((item) => item.id !== pin.id))
+        setNotice('Local pin removed.')
+        return
+      }
+      if (!hasFirebaseConfig || !db) {
+        setError('Firebase is not configured.')
+        return
+      }
+      await withTimeout(deleteDoc(doc(db, coll, pin.id)), 10000, 'Delete timed out.')
+      setNotice('Pin removed.')
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Could not delete pin.')
+    } finally {
+      setAdminBusyPinId(null)
+    }
+  }
+
   const savePin = async (event) => {
     event.preventDefault()
     if (!selectedLocation) return
@@ -590,10 +971,34 @@ function App() {
       return
     }
 
+    if (formMode !== 'edit' && activeMapId === 'community-map') {
+      if (!newPinCategory || !COMMUNITY_OVERVIEW_COLLECTIONS.includes(newPinCategory)) {
+        setFormError('Pick which topic map this pin belongs to.')
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
     setNotice('')
     setFormError('')
+
+    if (formMode !== 'edit' && hasFirebaseConfig) {
+      if (activeMapId !== 'community-map' && !activePinsCollection) {
+        setFormError('This map is not connected to Firebase yet.')
+        setSaving(false)
+        return
+      }
+    }
+
+    const createTargetCollection =
+      formMode !== 'edit'
+        ? activeMapId === 'community-map'
+          ? newPinCategory
+          : activePinsCollection
+        : null
+
+    const loosAmenities = showLooAmenitiesFieldset ? loosAmenityValues(form) : {}
 
     const tempId = `local-${Date.now()}`
     const optimisticPin = {
@@ -608,11 +1013,14 @@ function App() {
       imageUrls: [],
       details: form.details.trim(),
       localOnly: true,
+      ...(createTargetCollection ? { collection: createTargetCollection } : {}),
+      ...loosAmenities,
     }
     if (formMode === 'edit') {
       if (!currentUser) {
         setFormError('Login required to update pins.')
         setShowAuthModal(true)
+        setSaving(false)
         return
       }
 
@@ -622,19 +1030,41 @@ function App() {
         return
       }
 
+      const priorPin = pins.find(
+        (p) =>
+          p.id === targetId &&
+          (editingPinCollection == null || pinFirestoreCollection(p) === editingPinCollection),
+      )
+      const writeColl = editingPinCollection || pinFirestoreCollection(priorPin) || activePinsCollection
+      if (!writeColl) {
+        setFormError('This map is not connected to Firebase yet.')
+        setSaving(false)
+        return
+      }
+
+      const claimOwner = Boolean(priorPin && !priorPin.ownerUid && currentUser?.uid)
+
       setLocalPins((current) =>
-        current.map((pin) => (pin.id === targetId ? { ...pin, ...optimisticPin, id: targetId } : pin)),
+        current.map((pin) =>
+          pin.id === targetId
+            ? { ...pin, ...optimisticPin, id: targetId, ...(claimOwner ? { ownerUid: currentUser.uid } : {}) }
+            : pin,
+        ),
       )
 
       try {
         await withTimeout(
-          updateDoc(doc(db, 'loos', targetId), {
+          updateDoc(doc(db, writeColl, targetId), {
             name: optimisticPin.name,
             nearbyLandmarks: optimisticPin.nearbyLandmarks,
             rating: optimisticPin.rating,
             price: optimisticPin.price,
             isFree: optimisticPin.isFree,
             details: optimisticPin.details,
+            latitude: selectedLocation.lat,
+            longitude: selectedLocation.lng,
+            ...(writeColl === 'loos' ? loosAmenityValues(form) : {}),
+            ...(claimOwner ? { ownerUid: currentUser.uid } : {}),
             updatedAt: serverTimestamp(),
           }),
           10000,
@@ -642,7 +1072,7 @@ function App() {
         )
         setRemotePins((current) =>
           current.map((pin) =>
-            pin.id === targetId
+            pin.id === targetId && pinFirestoreCollection(pin) === writeColl
               ? {
                   ...pin,
                   name: optimisticPin.name,
@@ -651,6 +1081,10 @@ function App() {
                   price: optimisticPin.price,
                   isFree: optimisticPin.isFree,
                   details: optimisticPin.details,
+                  latitude: selectedLocation.lat,
+                  longitude: selectedLocation.lng,
+                  ...(writeColl === 'loos' ? loosAmenityValues(form) : {}),
+                  ...(claimOwner ? { ownerUid: currentUser.uid } : {}),
                 }
               : pin,
           ),
@@ -659,6 +1093,8 @@ function App() {
         setSelectedLocation(null)
         setFormMode('create')
         setEditingPinId(null)
+        setEditingPinCollection(null)
+        setNewPinCategory('')
       } catch (saveError) {
         setError(saveError?.message || 'Failed to update pin.')
       } finally {
@@ -670,6 +1106,7 @@ function App() {
     setLocalPins((current) => [optimisticPin, ...current])
     setFilterRating('all')
     setSelectedLocation(null)
+    setNewPinCategory('')
 
     if (!hasFirebaseConfig) {
       setNotice('Pin saved locally only. Add Firebase credentials to sync online.')
@@ -679,11 +1116,14 @@ function App() {
 
     let syncedPinId = null
     try {
-      const pinRef = doc(collection(db, 'loos'))
+      const pinRef = doc(collection(db, createTargetCollection))
       const syncedOptimisticPin = {
         ...optimisticPin,
         id: pinRef.id,
         localOnly: false,
+        collection: createTargetCollection,
+        ratingCount: 1,
+        ratingSum: numericRating,
       }
       syncedPinId = pinRef.id
       setLocalPins((current) => [
@@ -691,10 +1131,16 @@ function App() {
         ...current.filter((pin) => pin.id !== tempId),
       ])
 
+      const pinDocFields = { ...syncedOptimisticPin }
+      delete pinDocFields.collection
       await withTimeout(
         setDoc(pinRef, {
-          ...syncedOptimisticPin,
+          ...pinDocFields,
           id: pinRef.id,
+          ratingCount: 1,
+          ratingSum: numericRating,
+          ...(currentUser ? { ownerUid: currentUser.uid } : {}),
+          verified: false,
           createdAt: serverTimestamp(),
         }),
         10000,
@@ -755,157 +1201,12 @@ function App() {
 
   if (!activeMapId) {
     return (
-      <main className={`app-shell ${theme === 'dark' ? 'dark' : ''}`}>
-        <section className="landing-shell">
-          <header className="landing-hero scenic-hero">
-            <div className="hero-pill-row">
-              <span className="hero-pill">Community-first</span>
-              <span className="hero-pill">Realtime mapping</span>
-            </div>
-            <h1>whatsnearby</h1>
-            <p>
-              Choose a map category to start exploring community-based location intelligence.
-            </p>
-            <p className="landing-subtext">
-              Built for everyday convenience, whatsnearby helps people quickly find clean restroom
-              spots, compare details, and navigate with confidence.
-            </p>
-            <label className="theme-toggle" aria-label="Toggle dark mode">
-              <input
-                type="checkbox"
-                checked={theme === 'dark'}
-                onChange={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-              />
-              <span className="toggle-track">
-                <span className="toggle-thumb"></span>
-              </span>
-              <span className="toggle-text">Dark mode</span>
-            </label>
-          </header>
-
-          <section className="map-grid scenic-section maps-top">
-            {mapCatalog.map((item) => (
-              <article
-                key={item.id}
-                className={`map-card ${item.status !== 'available' ? 'disabled' : ''}`}
-              >
-                {item.id === 'loo-finder' ? (
-                  <div className="map-preview">
-                    <LandingMapPreview location={userLocation} theme={theme} />
-                  </div>
-                ) : null}
-                <span className="map-chip">{item.category}</span>
-                <h2>{item.title}</h2>
-                <p>{item.description}</p>
-                {item.status === 'available' ? (
-                  <button type="button" onClick={() => setActiveMapId(item.id)}>
-                    Open Map
-                  </button>
-                ) : (
-                  <button type="button" className="secondary" disabled>
-                    Coming Soon
-                  </button>
-                )}
-              </article>
-            ))}
-          </section>
-
-          <section className="feature-grid scenic-section">
-            <article className="feature-card">
-              <h3>Reliable Location Pins</h3>
-              <p>
-                Add and browse verified loo points with landmarks, ratings, and helpful context for
-                faster decisions.
-              </p>
-            </article>
-            <article className="feature-card">
-              <h3>Smart Routing</h3>
-              <p>
-                Get best-route guidance from your current location to any selected loo pin in just
-                one tap.
-              </p>
-            </article>
-            <article className="feature-card">
-              <h3>Community Friendly</h3>
-              <p>
-                Designed for public use with mobile-ready UI, dark mode, and simple contribution
-                workflows.
-              </p>
-            </article>
-          </section>
-
-          <section className="stats-grid">
-            {landingStats.map((item) => (
-              <article key={item.label} className="stat-card">
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </article>
-            ))}
-          </section>
-
-          <section className="showcase-strip">
-            <article className="showcase-card large">
-              <h3>Explore Nearby Coverage</h3>
-              <p>Preview available map coverage around your current position before opening.</p>
-            </article>
-            <article className="showcase-card">
-              <h3>Mobile-first</h3>
-              <p>Designed for quick use on the go with smooth touch-friendly controls.</p>
-            </article>
-            <article className="showcase-card">
-              <h3>Clean UI</h3>
-              <p>Readable visuals and structured cards for faster map selection.</p>
-            </article>
-          </section>
-
-          <section className="journey-section scenic-section">
-            <div className="journey-header">
-              <h2>How It Works</h2>
-              <p>
-                A simple workflow designed for fast access to trusted map-based community information.
-              </p>
-            </div>
-            <div className="journey-grid">
-              {processSteps.map((step, index) => (
-                <article key={step.title} className="journey-card">
-                  <span className="journey-index">0{index + 1}</span>
-                  <h3>{step.title}</h3>
-                  <p>{step.text}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="trust-section">
-            <article className="trust-card">
-              <h3>Designed for real-world use</h3>
-              <p>
-                whatsnearby balances clean visuals, practical details, and quick routing so users can
-                confidently decide where to go next.
-              </p>
-            </article>
-            <article className="trust-card">
-              <h3>Built with scalable architecture</h3>
-              <p>
-                Powered by Firebase and OpenStreetMap services, the platform is ready for growing
-                categories and location datasets.
-              </p>
-            </article>
-          </section>
-
-          <footer className="landing-footer scenic-footer">
-            <div>
-              <strong>whatsnearby</strong>
-              <p>Helping communities discover clean and accessible public restrooms.</p>
-            </div>
-            <div className="footer-meta">
-              <span>Realtime map updates</span>
-              <span>Mobile responsive</span>
-              <span>Powered by OpenStreetMap + Firebase</span>
-            </div>
-          </footer>
-        </section>
-      </main>
+      <LandingPage
+        theme={theme}
+        setTheme={setTheme}
+        userLocation={userLocation}
+        onOpenMap={setActiveMapId}
+      />
     )
   }
 
@@ -913,8 +1214,18 @@ function App() {
     <main className={`app-shell ${theme === 'dark' ? 'dark' : ''}`}>
       <header className="top-bar">
         <div className="brand-block">
-          <h1>whatsnearby</h1>
-          <p>Click map to pin, then fill the popup form.</p>
+          <img
+            className="app-nav-logo"
+            src="/whatsnearby-logo.png"
+            alt="whatsnearby"
+            width={200}
+            height={48}
+            decoding="async"
+          />
+          <div className="brand-block-titles">
+            <h1>{activeMapConfig.mapTitle}</h1>
+            <p>{activeMapConfig.tagline || 'Click map to pin, then fill the popup form.'}</p>
+          </div>
         </div>
         <div className="top-bar-actions">
           <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
@@ -945,21 +1256,38 @@ function App() {
             >
               Pin At Center
             </button>
-            <label className="theme-toggle" aria-label="Toggle dark mode">
+            <label className="theme-toggle" aria-label="Toggle light or dark mode">
               <input
                 type="checkbox"
                 checked={theme === 'dark'}
                 onChange={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
               />
               <span className="toggle-track">
-                <span className="toggle-thumb"></span>
+                <span className="toggle-track-icons" aria-hidden>
+                  <span className="toggle-icon toggle-icon-sun">
+                    <Sun size={14} strokeWidth={2} />
+                  </span>
+                  <span className="toggle-icon toggle-icon-moon">
+                    <Moon size={14} strokeWidth={2} />
+                  </span>
+                </span>
+                <span className="toggle-thumb">
+                  <span className="toggle-thumb-icon toggle-thumb-sun">
+                    <Sun size={14} strokeWidth={2.25} />
+                  </span>
+                  <span className="toggle-thumb-icon toggle-thumb-moon">
+                    <Moon size={14} strokeWidth={2.25} />
+                  </span>
+                </span>
               </span>
-              <span className="toggle-text">Dark mode</span>
             </label>
             {currentUser ? (
-              <button type="button" className="secondary" onClick={handleLogout}>
-                Logout
-              </button>
+              <>
+                {isAdmin ? <span className="admin-pill">Admin</span> : null}
+                <button type="button" className="secondary" onClick={handleLogout}>
+                  Logout
+                </button>
+              </>
             ) : (
               <button
                 type="button"
@@ -983,7 +1311,7 @@ function App() {
 
       <section className="map-shell" ref={mapShellRef}>
         <MapContainer center={mapCenter} zoom={14} className="map" tap={false}>
-          <LocateMap center={mapCenter} />
+          <LocateMap center={mapCenter} zoom={14} />
           <MapEvents onMapClick={openPinForm} onCenterChange={setVisibleCenter} />
           <SelectedPinOverlayTracker
             selectedLocation={selectedLocation}
@@ -999,12 +1327,45 @@ function App() {
           />
 
           {visiblePins.map((pin) => (
-            <Marker key={pin.id} position={[pin.latitude, pin.longitude]} icon={toiletIcon}>
+            <Marker
+              key={pinBusyKey(pin)}
+              position={[pin.latitude, pin.longitude]}
+              icon={markerIconForPin(pin, pinMarkerIcon)}
+            >
               <Popup maxWidth={280}>
                 <article className="popup-content">
+                  {pin.collection ? (
+                    <p className="hint" style={{ marginBottom: '0.35rem' }}>
+                      {mapLayerLabel(pin.collection)}
+                    </p>
+                  ) : null}
                   <h3>{pin.name}</h3>
                   <p>{pin.nearbyLandmarks || 'No nearby landmark'}</p>
                   <Stars value={pin.rating} />
+                  {!pin.localOnly && hasFirebaseConfig ? (
+                    <div className="quick-rate">
+                      <p className="quick-rate-label">Add your rating (no sign-in required)</p>
+                      <div className="quick-rate-row" role="group" aria-label="Rate from 1 to 5 stars">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            className={`quick-rate-star ${pin.rating >= n ? 'is-on' : ''}`}
+                            onClick={() => submitAnonymousRating(pin, n)}
+                            disabled={quickRatingBusyKey === pinBusyKey(pin)}
+                            aria-label={`Rate ${n} out of 5`}
+                          >
+                            <span aria-hidden>★</span>
+                          </button>
+                        ))}
+                      </div>
+                      {Number(pin.ratingCount) > 1 ? (
+                        <p className="quick-rate-meta">
+                          From {pin.ratingCount} ratings (shown as a 1–5 average).
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {Array.isArray(pin.imageUrls) && pin.imageUrls.length > 0 ? (
                     <div className="gallery">
                       {pin.imageUrls.map((url) => (
@@ -1013,17 +1374,55 @@ function App() {
                     </div>
                   ) : null}
                   <p>{pin.details || 'No additional details.'}</p>
+                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' &&
+                  LOO_AMENITY_FIELDS.some(({ key }) => pin[key]) ? (
+                    <div className="loo-amenity-icons-row" role="list" aria-label="Amenities">
+                      {LOO_AMENITY_FIELDS.filter(({ key }) => pin[key]).map(({ key, label, Icon }) => (
+                        <span key={key} className="loo-amenity-icon-badge" role="listitem" title={label}>
+                          <Icon size={18} strokeWidth={1.75} aria-hidden />
+                          <span className="visually-hidden">{label}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <p className="price-info">
                     {pin.isFree ? 'Free' : `Price: ₱${Number(pin.price || 0).toFixed(2)}`}
                   </p>
+                  {pin.verified ? (
+                    <p className="verified-line">Verified listing</p>
+                  ) : (
+                    <p className="unverified-line">Not yet verified</p>
+                  )}
                   {pin.localOnly ? <small className="hint">Local only</small> : null}
+                  {isAdmin ? (
+                    <div className="admin-pin-actions">
+                      {!pin.localOnly && !pin.verified ? (
+                        <button
+                          type="button"
+                          className="route-btn admin-verify-btn"
+                          onClick={() => verifyPinAsAdmin(pin)}
+                          disabled={adminBusyPinId === pinBusyKey(pin)}
+                        >
+                          {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Verify data'}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="route-btn admin-delete-btn"
+                        onClick={() => deletePinAsAdmin(pin)}
+                        disabled={adminBusyPinId === pinBusyKey(pin)}
+                      >
+                        {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Delete pin'}
+                      </button>
+                    </div>
+                  ) : null}
                   <button
                     type="button"
                     className="route-btn"
                     onClick={() => getBestRouteToPin(pin)}
-                    disabled={routingForPinId === pin.id}
+                    disabled={routingForPinId === pinBusyKey(pin)}
                   >
-                    {routingForPinId === pin.id ? 'Routing...' : 'Get Directions'}
+                    {routingForPinId === pinBusyKey(pin) ? 'Routing...' : 'Get Directions'}
                   </button>
                   <button
                     type="button"
@@ -1046,7 +1445,11 @@ function App() {
           {selectedLocation ? (
             <Marker
               position={[selectedLocation.lat, selectedLocation.lng]}
-              icon={toiletIcon}
+              icon={
+                formMode === 'create' && activeMapId === 'community-map' && newPinCategory
+                  ? markerIconForPin({ collection: newPinCategory }, pinMarkerIcon)
+                  : pinMarkerIcon
+              }
             />
           ) : null}
 
@@ -1072,7 +1475,10 @@ function App() {
               type="button"
               className="modal-close"
               aria-label="Close add pin modal"
-              onClick={() => setSelectedLocation(null)}
+              onClick={() => {
+                setSelectedLocation(null)
+                setNewPinCategory('')
+              }}
             >
               ×
             </button>
@@ -1080,6 +1486,25 @@ function App() {
               {selectedLocation.lat.toFixed(5)}, {selectedLocation.lng.toFixed(5)}
             </p>
             {formError ? <p className="form-error">{formError}</p> : null}
+
+            {formMode === 'create' && activeMapId === 'community-map' ? (
+              <fieldset className="pin-category-fieldset">
+                <legend>Which topic map?</legend>
+                <p className="pin-category-hint">Choose where this pin is saved.</p>
+                {COMMUNITY_CREATE_CATEGORIES.map(({ collection, label }) => (
+                  <label key={collection} className="pin-category-option">
+                    <input
+                      type="radio"
+                      name="newPinCategory"
+                      value={collection}
+                      checked={newPinCategory === collection}
+                      onChange={() => setNewPinCategory(collection)}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
 
             <label>
               Location Name
@@ -1103,50 +1528,73 @@ function App() {
               {reverseLookupLoading ? <small className="hint">Fetching nearby landmark...</small> : null}
             </label>
 
-            <label>
-              Rating (1-5)
-              <input
-                type="number"
-                  min="1"
-                max="5"
-                value={form.rating}
-                onChange={(event) =>
-                    setForm((current) => ({ ...current, rating: event.target.value }))
-                }
-                  placeholder="1-5"
-                required
-              />
-            </label>
+            <div className="form-rating-field">
+              <span className="form-rating-label">Rating (1–5)</span>
+              <div className="form-rating-row" role="group" aria-label="Your rating from 1 to 5 stars">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`form-rating-star ${Number(form.rating) >= n ? 'is-on' : ''}`}
+                    onClick={() => setForm((current) => ({ ...current, rating: String(n) }))}
+                    aria-label={`Set rating to ${n} out of 5`}
+                  >
+                    <span aria-hidden>★</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <label>
-              Price
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.price}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, price: event.target.value }))
-                }
-                placeholder={form.isFree ? '0.00' : 'Enter price'}
-                disabled={form.isFree}
-              />
-            </label>
+            <div className="price-with-free-field">
+              <span className="price-with-free-label">Price</span>
+              <div className="price-with-free-row">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.price}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, price: event.target.value }))
+                  }
+                  placeholder={form.isFree ? '0.00' : 'Enter price'}
+                  disabled={form.isFree}
+                  aria-label="Price in pesos"
+                />
+                <label className="checkbox-field price-free-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={form.isFree}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        isFree: event.target.checked,
+                        price: event.target.checked ? '0' : current.price,
+                      }))
+                    }
+                  />
+                  <span>Free</span>
+                </label>
+              </div>
+            </div>
 
-            <label className="checkbox-field">
-              <input
-                type="checkbox"
-                checked={form.isFree}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    isFree: event.target.checked,
-                    price: event.target.checked ? '0' : current.price,
-                  }))
-                }
-              />
-              Free
-            </label>
+            {showLooAmenitiesFieldset ? (
+              <fieldset className="pin-category-fieldset loo-amenities-fieldset">
+                <legend>Amenities</legend>
+                <p className="pin-category-hint">What’s available at this restroom?</p>
+                {LOO_AMENITY_FIELDS.map(({ key, label }) => (
+                  <label key={key} className="checkbox-field pin-category-option loo-amenity-option">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form[key])}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, [key]: event.target.checked }))
+                      }
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
 
             <label>
               Images

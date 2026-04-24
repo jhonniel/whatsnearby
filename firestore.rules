@@ -1,0 +1,142 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function pinCreateCommon() {
+      return request.resource.data.latitude is number
+        && request.resource.data.longitude is number
+        && request.resource.data.keys().hasAll(['name', 'latitude', 'longitude'])
+        && (!request.resource.data.keys().hasAny(['verified'])
+          || request.resource.data.verified == false);
+    }
+
+    function pinCreateAuthed() {
+      return request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasAll(['name', 'latitude', 'longitude', 'ownerUid'])
+        && pinCreateCommon();
+    }
+
+    function pinCreateAnonymous() {
+      return request.auth == null
+        && pinCreateCommon()
+        && (!request.resource.data.keys().hasAny(['ownerUid'])
+          || request.resource.data.ownerUid == null);
+    }
+
+    function ownerUpdateKeysOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny([
+          'verified',
+          'verifiedAt',
+          'verifiedByUid',
+          'createdAt',
+          'ownerUid',
+          'id',
+        ]);
+    }
+
+    function noOwnerPin() {
+      return !resource.data.keys().hasAny(['ownerUid']) || resource.data.ownerUid == null;
+    }
+
+    function openPinFieldUpdateOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['verified', 'verifiedAt', 'verifiedByUid', 'createdAt', 'id']);
+    }
+
+    function claimOwnerOk() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid'])
+        || (noOwnerPin() && request.resource.data.ownerUid == request.auth.uid);
+    }
+
+    function publicRatingVoteOk() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      let prevCount = resource.data.get('ratingCount', 1);
+      let prevRating = resource.data.get('rating', 3);
+      let prevSum = resource.data.get('ratingSum', prevRating * prevCount);
+      return affected.hasOnly(['rating', 'ratingCount', 'ratingSum', 'updatedAt'])
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.ratingCount is number
+        && request.resource.data.ratingCount == prevCount + 1
+        && request.resource.data.ratingSum is number
+        && request.resource.data.ratingSum >= prevSum + 1
+        && request.resource.data.ratingSum <= prevSum + 5;
+    }
+
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /loos/{looId} {
+      allow read: if true;
+
+      allow create: if pinCreateAuthed() || pinCreateAnonymous();
+
+      allow update: if request.auth != null && isAdmin();
+
+      allow update: if request.auth != null
+        && resource.data.get('ownerUid', '') == request.auth.uid
+        && ownerUpdateKeysOk();
+
+      allow update: if request.auth != null
+        && noOwnerPin()
+        && openPinFieldUpdateOk()
+        && claimOwnerOk();
+
+      allow update: if publicRatingVoteOk();
+
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    match /restaurants_cafes/{pinId} {
+      allow read: if true;
+
+      allow create: if pinCreateAuthed() || pinCreateAnonymous();
+
+      allow update: if request.auth != null && isAdmin();
+
+      allow update: if request.auth != null
+        && resource.data.get('ownerUid', '') == request.auth.uid
+        && ownerUpdateKeysOk();
+
+      allow update: if request.auth != null
+        && noOwnerPin()
+        && openPinFieldUpdateOk()
+        && claimOwnerOk();
+
+      allow update: if publicRatingVoteOk();
+
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    match /tambayan_24h/{pinId} {
+      allow read: if true;
+
+      allow create: if pinCreateAuthed() || pinCreateAnonymous();
+
+      allow update: if request.auth != null && isAdmin();
+
+      allow update: if request.auth != null
+        && resource.data.get('ownerUid', '') == request.auth.uid
+        && ownerUpdateKeysOk();
+
+      allow update: if request.auth != null
+        && noOwnerPin()
+        && openPinFieldUpdateOk()
+        && claimOwnerOk();
+
+      allow update: if publicRatingVoteOk();
+
+      allow delete: if request.auth != null && isAdmin();
+    }
+  }
+}
