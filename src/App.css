@@ -223,6 +223,28 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.locate-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.locate-loading-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: locate-spin 0.75s linear infinite;
+  opacity: 0.88;
+}
+
+@keyframes locate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .map,
 .map.leaflet-container {
   flex: 1;
@@ -232,7 +254,7 @@ button:disabled {
   border-radius: 0;
   overflow: hidden;
   border: none;
-  background: #e2e8f0 url('/map-system-bg.png?v=2') center center / cover no-repeat !important;
+  background: #e2e8f0;
 }
 
 /* OSM / Leaflet attribution: compact chip anchored to bottom-left */
@@ -319,8 +341,29 @@ button:disabled {
 
 .app-shell.dark .map-loading-overlay {
   background:
-    linear-gradient(180deg, rgba(2, 6, 23, 0.62), rgba(15, 23, 42, 0.78)),
-    url('/map-system-bg.png?v=2') center center / cover no-repeat;
+    linear-gradient(180deg, rgba(2, 6, 23, 0.62), rgba(15, 23, 42, 0.78));
+}
+
+.app-shell.dark .map-locate-card {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: #334155;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+}
+
+.app-shell.dark .map-locate-dot {
+  background: #38bdf8;
+}
+
+.app-shell.dark .map-locate-pulse {
+  border-color: rgba(56, 189, 248, 0.42);
+}
+
+.app-shell.dark .map-locate-title {
+  color: #e2e8f0;
+}
+
+.app-shell.dark .map-locate-subtitle {
+  color: #94a3b8;
 }
 
 .app-shell.dark .map-loading-card {
@@ -392,9 +435,81 @@ button:disabled {
   place-items: center;
   padding: 1rem;
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.32), rgba(241, 245, 249, 0.48)),
-    url('/map-system-bg.png?v=2') center center / cover no-repeat;
+    linear-gradient(180deg, rgba(248, 250, 252, 0.32), rgba(241, 245, 249, 0.48));
   pointer-events: auto;
+}
+
+.map-locate-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 638;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  pointer-events: none;
+}
+
+.map-locate-card {
+  position: relative;
+  min-width: min(18rem, calc(100% - 1.25rem));
+  display: grid;
+  place-items: center;
+  gap: 0.24rem;
+  padding: 0.95rem 1rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid #dbe3ee;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(6px);
+}
+
+.map-locate-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  background: #2563eb;
+  margin-bottom: 0.08rem;
+}
+
+.map-locate-pulse {
+  position: absolute;
+  top: 0.65rem;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  border: 2px solid rgba(37, 99, 235, 0.34);
+  animation: map-locate-pulse 1.45s ease-out infinite;
+}
+
+.map-locate-pulse--two {
+  animation-delay: 0.72s;
+}
+
+.map-locate-title {
+  margin: 0.15rem 0 0;
+  font-size: 0.93rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.map-locate-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+@keyframes map-locate-pulse {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
 }
 
 .map-loading-card {
@@ -1409,6 +1524,23 @@ button:disabled {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+  }
+
+  .map-locate-overlay {
+    padding: 0.75rem;
+  }
+
+  .map-locate-card {
+    min-width: min(16.5rem, calc(100% - 0.9rem));
+    padding: 0.82rem 0.9rem 0.75rem;
+  }
+
+  .map-locate-title {
+    font-size: 0.88rem;
+  }
+
+  .map-locate-subtitle {
+    font-size: 0.75rem;
   }
 
   .map-loading-overlay {

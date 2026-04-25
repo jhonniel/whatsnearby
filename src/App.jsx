@@ -289,6 +289,14 @@ function MapInvalidateOnResize() {
   return null
 }
 
+function MapInstanceBridge({ onMapReady }) {
+  const map = useMap()
+  useEffect(() => {
+    onMapReady(map)
+  }, [map, onMapReady])
+  return null
+}
+
 function SelectedPinOverlayTracker({ selectedLocation, onPositionChange }) {
   const map = useMapEvents({
     move() {
@@ -345,6 +353,7 @@ function App() {
   const [filterRating, setFilterRating] = useState('all')
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
+  const [mapInstance, setMapInstance] = useState(null)
   const [anchoredModalStyle, setAnchoredModalStyle] = useState({})
   const [showBelowPin, setShowBelowPin] = useState(false)
   const [theme, setTheme] = useState(
@@ -1210,7 +1219,12 @@ function App() {
       const narrow = typeof window !== 'undefined' && window.innerWidth <= 768
       const marginX = narrow ? 8 : margin
       const appShell = shell.closest('main.app-shell')
+      const topChromeEl = appShell?.querySelector('.map-chrome-layer')
       const footerEl = appShell?.querySelector('.map-footer-layer')
+      const topChromeReserve =
+        topChromeEl && typeof topChromeEl.getBoundingClientRect === 'function'
+          ? topChromeEl.getBoundingClientRect().height + 10
+          : margin
       const footerReserve =
         footerEl && typeof footerEl.getBoundingClientRect === 'function'
           ? footerEl.getBoundingClientRect().height + 10
@@ -1220,12 +1234,12 @@ function App() {
       const leftMax = shellRect.width - modalWidth / 2 - marginX
       const left = Math.min(Math.max(selectedScreenPos.x, leftMin), leftMax)
 
-      const availableAbove = selectedScreenPos.y - margin
+      const availableAbove = selectedScreenPos.y - topChromeReserve
       const availableBelow = shellRect.height - selectedScreenPos.y - margin - footerReserve
       const placeBelow = availableAbove < estimatedModalHeight && availableBelow > availableAbove
       const top = placeBelow
         ? Math.min(selectedScreenPos.y + anchorOffset, shellRect.height - margin - footerReserve)
-        : Math.max(selectedScreenPos.y - anchorOffset, margin)
+        : Math.max(selectedScreenPos.y - anchorOffset, topChromeReserve)
       const maxHeight = Math.max(220, (placeBelow ? availableBelow : availableAbove) - 14)
 
       setShowBelowPin(placeBelow)
@@ -1246,6 +1260,41 @@ function App() {
       window.removeEventListener('orientationchange', layoutAnchoredModal)
     }
   }, [selectedLocation, selectedScreenPos])
+
+  useEffect(() => {
+    if (!selectedLocation || !mapShellRef.current || !mapInstance) return
+
+    const appShell = mapShellRef.current.closest('main.app-shell')
+
+    const topChromeEl = appShell?.querySelector('.map-chrome-layer')
+    const footerEl = appShell?.querySelector('.map-footer-layer')
+    const dockEl = appShell?.querySelector('.map-toolbar-dock')
+    const quickActionsEl = appShell?.querySelector('.map-quick-actions--floating')
+    const noticesEl = appShell?.querySelector('.map-notice-stack')
+
+    const visibleHeight = (el) => {
+      if (!el || !(el instanceof HTMLElement)) return 0
+      const style = window.getComputedStyle(el)
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return 0
+      return el.getBoundingClientRect().height
+    }
+
+    const topSafe = visibleHeight(topChromeEl) + 14
+    const bottomSafe =
+      visibleHeight(footerEl) +
+      visibleHeight(dockEl) +
+      visibleHeight(quickActionsEl) +
+      visibleHeight(noticesEl) +
+      18
+
+    // Keep the selected marker inside a safe viewport without aggressive pan loops.
+    mapInstance.panInside([selectedLocation.lat, selectedLocation.lng], {
+      paddingTopLeft: [18, topSafe],
+      paddingBottomRight: [18, bottomSafe],
+      animate: true,
+      duration: 0.25,
+    })
+  }, [mapInstance, selectedLocation, showAuthModal])
 
   if (!activeMapId) {
     return (
@@ -1297,7 +1346,14 @@ function App() {
           <div className="controls-row controls-row-bottom">
             <div className="map-quick-actions map-quick-actions--inline">
               <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
-                {isLocating ? 'Locating...' : 'Locate Me'}
+                {isLocating ? (
+                  <span className="locate-loading">
+                    <span className="locate-loading-spinner" aria-hidden="true"></span>
+                    Locating...
+                  </span>
+                ) : (
+                  'Locate Me'
+                )}
               </button>
               <button
                 type="button"
@@ -1363,7 +1419,14 @@ function App() {
           Home
         </button>
         <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
-          {isLocating ? 'Locating...' : 'Locate Me'}
+          {isLocating ? (
+            <span className="locate-loading">
+              <span className="locate-loading-spinner" aria-hidden="true"></span>
+              Locating...
+            </span>
+          ) : (
+            'Locate Me'
+          )}
         </button>
         <button
           type="button"
@@ -1373,26 +1436,31 @@ function App() {
           Pin At Center
         </button>
       </div>
-      <div className="map-notice-stack" aria-live="polite" aria-atomic="true">
-        {error ? <p className="map-notice map-notice--error">{error}</p> : null}
-        {notice ? <p className="map-notice map-notice--warning">{notice}</p> : null}
-        {routeSummary ? (
-          <p className="map-notice map-notice--info">
-            Route to <strong>{routeSummary.destinationName}</strong>: {routeSummary.distanceKm} km, about{' '}
-            {routeSummary.durationMin} min.
-          </p>
-        ) : null}
-      </div>
+      {!selectedLocation && !showAuthModal ? (
+        <div className="map-notice-stack" aria-live="polite" aria-atomic="true">
+          {error ? <p className="map-notice map-notice--error">{error}</p> : null}
+          {notice ? <p className="map-notice map-notice--warning">{notice}</p> : null}
+          {routeSummary ? (
+            <p className="map-notice map-notice--info">
+              Route to <strong>{routeSummary.destinationName}</strong>: {routeSummary.distanceKm} km, about{' '}
+              {routeSummary.durationMin} min.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="map-shell" ref={mapShellRef}>
         <MapContainer
           center={mapCenter}
           zoom={14}
+          minZoom={12}
           className="map"
           tap={false}
+          scrollWheelZoom={false}
           zoomControl={false}
           attributionControl={false}
         >
+          <MapInstanceBridge onMapReady={setMapInstance} />
           <MapInvalidateOnResize />
           <LocateMap center={mapCenter} zoom={14} />
           <MapEvents onMapClick={openPinForm} onCenterChange={setVisibleCenter} />
@@ -1560,6 +1628,17 @@ function App() {
               </div>
               <p className="map-loading-title">Loading pins</p>
               <p className="map-loading-subtitle">Fetching nearby community pins...</p>
+            </div>
+          </div>
+        ) : null}
+        {isLocating ? (
+          <div className="map-locate-overlay" role="status" aria-live="polite">
+            <div className="map-locate-card">
+              <span className="map-locate-pulse map-locate-pulse--one" aria-hidden="true"></span>
+              <span className="map-locate-pulse map-locate-pulse--two" aria-hidden="true"></span>
+              <span className="map-locate-dot" aria-hidden="true"></span>
+              <p className="map-locate-title">Locating you</p>
+              <p className="map-locate-subtitle">Getting your current position...</p>
             </div>
           </div>
         ) : null}

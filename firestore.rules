@@ -8,9 +8,73 @@ service cloud.firestore {
     }
 
     function pinCreateCommon() {
-      return request.resource.data.latitude is number
+      return request.resource.data.keys().hasAll(['name', 'latitude', 'longitude', 'rating', 'ratingCount', 'ratingSum'])
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'name',
+          'latitude',
+          'longitude',
+          'nearbyLandmarks',
+          'rating',
+          'ratingCount',
+          'ratingSum',
+          'price',
+          'isFree',
+          'details',
+          'imageUrls',
+          'bidet',
+          'shower',
+          'cleanWater',
+          'cleanToilet',
+          'mirror',
+          'ownerUid',
+          'verified',
+          'createdAt',
+          'updatedAt',
+          'localOnly'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.latitude is number
+        && request.resource.data.latitude >= -90
+        && request.resource.data.latitude <= 90
         && request.resource.data.longitude is number
-        && request.resource.data.keys().hasAll(['name', 'latitude', 'longitude'])
+        && request.resource.data.longitude >= -180
+        && request.resource.data.longitude <= 180
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && request.resource.data.ratingCount is number
+        && request.resource.data.ratingCount >= 1
+        && request.resource.data.ratingCount <= 1000000
+        && request.resource.data.ratingSum is number
+        && request.resource.data.ratingSum >= request.resource.data.ratingCount
+        && request.resource.data.ratingSum <= request.resource.data.ratingCount * 5
+        && request.resource.data.isFree is bool
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0
+        && request.resource.data.price <= 10000
+        && (!request.resource.data.keys().hasAny(['nearbyLandmarks'])
+          || (request.resource.data.nearbyLandmarks is string && request.resource.data.nearbyLandmarks.size() <= 220))
+        && (!request.resource.data.keys().hasAny(['details'])
+          || (request.resource.data.details is string && request.resource.data.details.size() <= 3000))
+        && (!request.resource.data.keys().hasAny(['id'])
+          || request.resource.data.id is string)
+        && (!request.resource.data.keys().hasAny(['imageUrls'])
+          || request.resource.data.imageUrls is list)
+        && (!request.resource.data.keys().hasAny(['bidet'])
+          || request.resource.data.bidet is bool)
+        && (!request.resource.data.keys().hasAny(['shower'])
+          || request.resource.data.shower is bool)
+        && (!request.resource.data.keys().hasAny(['cleanWater'])
+          || request.resource.data.cleanWater is bool)
+        && (!request.resource.data.keys().hasAny(['cleanToilet'])
+          || request.resource.data.cleanToilet is bool)
+        && (!request.resource.data.keys().hasAny(['mirror'])
+          || request.resource.data.mirror is bool)
+        && (!request.resource.data.keys().hasAny(['localOnly'])
+          || request.resource.data.localOnly == false)
         && (!request.resource.data.keys().hasAny(['verified'])
           || request.resource.data.verified == false);
     }
@@ -38,6 +102,8 @@ service cloud.firestore {
           'createdAt',
           'ownerUid',
           'id',
+          'ratingCount',
+          'ratingSum',
         ]);
     }
 
@@ -47,7 +113,7 @@ service cloud.firestore {
 
     function openPinFieldUpdateOk() {
       return !request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny(['verified', 'verifiedAt', 'verifiedByUid', 'createdAt', 'id']);
+        .hasAny(['verified', 'verifiedAt', 'verifiedByUid', 'createdAt', 'id', 'ratingCount', 'ratingSum']);
     }
 
     function claimOwnerOk() {
