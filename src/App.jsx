@@ -29,6 +29,7 @@ import {
 } from 'react-leaflet'
 import { Bath, Droplets, MirrorRound, Moon, ShowerHead, Sun, Toilet } from 'lucide-react'
 import L from 'leaflet'
+import { Analytics } from '@vercel/analytics/react'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
 import { LandingPage } from './LandingPage'
@@ -1787,6 +1788,7 @@ function App() {
           </form>
         </section>
       ) : null}
+      <Analytics />
     </main>
   )
 }
