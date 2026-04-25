@@ -26,7 +26,7 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet'
-import { Bath, Droplets, MirrorRound, ShowerHead, SlidersHorizontal, Toilet, X } from 'lucide-react'
+import { Bath, Droplets, MirrorRound, Moon, ShowerHead, SlidersHorizontal, Sun, Toilet, X } from 'lucide-react'
 import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
@@ -601,6 +601,26 @@ function App() {
     return next
   }, [pins, filterRating, filterCategory, activeMapId])
 
+  const activeFilterSummary = useMemo(() => {
+    const parts = []
+    if (activeMapId === 'community-map' && filterCategory !== 'all') {
+      const categoryLabel =
+        {
+          loos: 'Loo Finder',
+          restaurants_cafes: 'Restaurants & Cafe',
+          tambayan_24h: 'Tambayan 24hrs',
+        }[filterCategory] || filterCategory
+      parts.push(`Category: ${categoryLabel}`)
+    }
+    if (filterRating !== 'all') {
+      parts.push(`Rating: ${filterRating}+ stars`)
+    }
+    if (parts.length === 0) {
+      return 'Showing all pins'
+    }
+    return `Filtered by ${parts.join(' • ')}`
+  }, [activeMapId, filterCategory, filterRating])
+
   const showLooAmenitiesFieldset = useMemo(
     () =>
       shouldIncludeLoosAmenities({
@@ -612,13 +632,55 @@ function App() {
     [formMode, activeMapId, newPinCategory, editingPinCollection],
   )
 
-  const locateMe = () => {
+  const requestBrowserLocationPermission = async () => {
+    if (!navigator.geolocation) {
+      return { ok: false, reason: 'unsupported' }
+    }
+
+    try {
+      if (navigator.permissions?.query) {
+        const permission = await navigator.permissions.query({ name: 'geolocation' })
+        if (permission.state === 'denied') {
+          return { ok: false, reason: 'denied' }
+        }
+      }
+    } catch {
+      // Some browsers do not support querying geolocation permission state.
+    }
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve({ ok: true, position }),
+        (err) => resolve({ ok: false, reason: err?.code === 1 ? 'denied' : 'error' }),
+        {
+          enableHighAccuracy: false,
+          maximumAge: 0,
+          timeout: 12_000,
+        },
+      )
+    })
+  }
+
+  const locateMe = async () => {
     if (!navigator.geolocation) {
       setError('This browser does not support location.')
       return
     }
     setIsLocating(true)
     setError('')
+
+    const permissionRequest = await requestBrowserLocationPermission()
+    if (!permissionRequest.ok) {
+      setIsLocating(false)
+      if (permissionRequest.reason === 'denied') {
+        setError(
+          'Location permission is blocked. Allow location in your browser site settings, then tap Locate Me again.',
+        )
+      } else {
+        setError('Unable to request browser location permission. Please try again.')
+      }
+      return
+    }
 
     const finishError = (err) => {
       setIsLocating(false)
@@ -642,6 +704,11 @@ function App() {
       setUserLocation(current)
       setIsLocating(false)
       setError('')
+    }
+
+    if (permissionRequest.position) {
+      onOk(permissionRequest.position)
+      return
     }
 
     navigator.geolocation.getCurrentPosition(onOk, (err) => {
@@ -1344,9 +1411,10 @@ function App() {
         </div>
         <div className="top-bar-actions map-toolbar-dock" aria-label="Map category filter">
           <div className="controls-row controls-row-top">
-            <p className="top-category-text" aria-label="Current map category">
-              {activeMapConfig.mapTitle}
-            </p>
+            <div className="top-filter-summary" aria-label="Current map and filters">
+              <p className="top-category-text">{activeMapConfig.mapTitle}</p>
+              <p className="top-filter-text">{activeFilterSummary}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -1372,6 +1440,33 @@ function App() {
         aria-label="Map filters"
         aria-hidden={!mobileFilterMenuOpen}
       >
+          <div className="menu-theme-toggle-row">
+            <label className="theme-toggle menu-theme-toggle" aria-label="Toggle light or dark mode">
+              <input
+                type="checkbox"
+                checked={theme === 'dark'}
+                onChange={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              />
+              <span className="toggle-track">
+                <span className="toggle-track-icons" aria-hidden>
+                  <span className="toggle-icon toggle-icon-sun">
+                    <Sun size={14} strokeWidth={2} />
+                  </span>
+                  <span className="toggle-icon toggle-icon-moon">
+                    <Moon size={14} strokeWidth={2} />
+                  </span>
+                </span>
+                <span className="toggle-thumb">
+                  <span className="toggle-thumb-icon toggle-thumb-sun">
+                    <Sun size={14} strokeWidth={2.25} />
+                  </span>
+                  <span className="toggle-thumb-icon toggle-thumb-moon">
+                    <Moon size={14} strokeWidth={2.25} />
+                  </span>
+                </span>
+              </span>
+            </label>
+          </div>
           {activeMapId === 'community-map' ? (
             <label className="mobile-filter-field">
               Category
