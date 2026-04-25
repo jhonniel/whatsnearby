@@ -98,7 +98,7 @@ const COMMUNITY_OVERVIEW_COLLECTIONS = ['loos', 'restaurants_cafes', 'tambayan_2
 
 /** When adding a pin on the merged map, user picks one of these Firestore collections. */
 const COMMUNITY_CREATE_CATEGORIES = [
-  { collection: 'loos', label: 'Loo Finder — restrooms & sanitation' },
+  { collection: 'loos', label: 'Restrooms — restrooms & sanitation' },
   { collection: 'restaurants_cafes', label: 'Restaurants & Cafe' },
   { collection: 'tambayan_24h', label: 'Tambayan 24hrs — late-night hangouts' },
 ]
@@ -110,13 +110,13 @@ const MAP_REGISTRY = {
     mergeCollections: COMMUNITY_OVERVIEW_COLLECTIONS,
     mapTitle: 'All community pins',
     tagline:
-      'Browse every pin neighbors shared. Click the map to add one—then choose whether it belongs on Loo Finder, Restaurants & Cafe, or Tambayan 24hrs.',
+      'Browse every pin neighbors shared. Click the map to add one—then choose whether it belongs on Restrooms, Restaurants & Cafe, or Tambayan 24hrs.',
     pinIcon: toiletIcon,
   },
   'loo-finder': {
     path: '/loo-finder-map',
     firestoreCollection: 'loos',
-    mapTitle: 'Loo Finder',
+    mapTitle: 'Restrooms',
     tagline: 'Click map to pin a restroom, then fill the popup form.',
     pinIcon: toiletIcon,
   },
@@ -300,7 +300,7 @@ function pinBusyKey(pin) {
 function mapLayerLabel(collection) {
   if (collection === 'restaurants_cafes') return 'Restaurants & Cafe'
   if (collection === 'tambayan_24h') return 'Tambayan 24hrs'
-  if (collection === 'loos') return 'Loo Finder'
+  if (collection === 'loos') return 'Restrooms'
   return 'Map pin'
 }
 
@@ -549,7 +549,15 @@ function App() {
 
   useEffect(() => {
     if (!hasFirebaseConfig || !auth) return undefined
-    const unsubscribe = onAuthStateChanged(auth, (user) => setCurrentUser(user))
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user)
+      if (user) {
+        setShowAuthModal(false)
+        setAuthError('')
+        setAuthLoading(false)
+        setPendingEditPin(null)
+      }
+    })
     return unsubscribe
   }, [])
 
@@ -734,7 +742,7 @@ function App() {
     if (activeMapId === 'community-map' && filterCategory !== 'all') {
       const categoryLabel =
         {
-          loos: 'Loo Finder',
+          loos: 'Restrooms',
           restaurants_cafes: 'Restaurants & Cafe',
           tambayan_24h: 'Tambayan 24hrs',
         }[filterCategory] || filterCategory
@@ -1888,7 +1896,7 @@ out tags qt 40;
                 onChange={(event) => setFilterCategory(event.target.value)}
               >
                 <option value="all">All categories</option>
-                <option value="loos">Loo Finder</option>
+                <option value="loos">Restrooms</option>
                 <option value="restaurants_cafes">Restaurants & Cafe</option>
                 <option value="tambayan_24h">Tambayan 24hrs</option>
               </select>

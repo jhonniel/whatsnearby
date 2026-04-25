@@ -470,6 +470,78 @@
   text-align: center;
 }
 
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 999px;
+  box-shadow: 0 2px 9px rgba(15, 23, 42, 0.14);
+  padding: 0.16rem 0.42rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label::before {
+  border-top-color: #bfdbfe;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--loos {
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--loos::before {
+  border-top-color: #bfdbfe;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--restaurants {
+  border-color: #67e8f9;
+  color: #0e7490;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--restaurants::before {
+  border-top-color: #67e8f9;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--tambayan {
+  border-color: #facc15;
+  color: #854d0e;
+}
+
+.saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--tambayan::before {
+  border-top-color: #facc15;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label {
+  background: rgba(15, 23, 42, 0.94);
+  border-color: #334155;
+  color: #bfdbfe;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label::before {
+  border-top-color: #334155;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--restaurants {
+  border-color: #0891b2;
+  color: #67e8f9;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--restaurants::before {
+  border-top-color: #0891b2;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--tambayan {
+  border-color: #a16207;
+  color: #fde68a;
+}
+
+.saas-shell--dark .saas-map-preview-wrap .leaflet-tooltip.preview-pin-label--tambayan::before {
+  border-top-color: #a16207;
+}
+
 .saas-map-preview-wrap {
   overflow: hidden;
   border: none;

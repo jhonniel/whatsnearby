@@ -931,8 +931,10 @@ button:disabled {
   bottom: max(0.55rem, calc(env(safe-area-inset-bottom, 0px) + 3.3rem));
   transform: translateX(-50%);
   z-index: 635;
-  width: min(32rem, calc(100% - 1rem));
+  width: calc(100% - 1rem);
+  max-width: 34rem;
   display: grid;
+  justify-items: center;
   gap: 0.4rem;
   pointer-events: none;
 }
@@ -956,6 +958,8 @@ button:disabled {
   pointer-events: auto;
   overflow: hidden;
   animation: map-notice-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  width: fit-content;
+  max-width: min(34rem, calc(100vw - 1rem));
 }
 
 .map-notice--error {

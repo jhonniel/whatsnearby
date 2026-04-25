@@ -3,12 +3,11 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import L from 'leaflet'
 import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import {
-  Accessibility,
   ArrowRight,
+  Beer,
   Check,
   ChevronRight,
   Cloud,
-  Droplets,
   LayoutGrid,
   Map,
   MapPinned,
@@ -20,8 +19,10 @@ import {
   Sun,
   Smartphone,
   Sparkles,
+  TentTree,
   UtensilsCrossed,
   UsersRound,
+  Wrench,
   Zap,
 } from 'lucide-react'
 import './LandingPage.css'
@@ -82,6 +83,12 @@ function previewIconForCollection(collection) {
   return previewToiletIcon
 }
 
+function previewLabelCategoryKey(collection) {
+  if (collection === 'restaurants_cafes') return 'restaurants'
+  if (collection === 'tambayan_24h') return 'tambayan'
+  return 'loos'
+}
+
 const mapCatalog = [
   {
     id: 'community-map',
@@ -93,7 +100,7 @@ const mapCatalog = [
   },
   {
     id: 'loo-finder',
-    title: 'Loo Finder',
+    title: 'Restrooms',
     category: 'Sanitation',
     description:
       'Neighbors share public restrooms nearby—ratings, landmarks, and directions so everyone can find a clean stop when they need one.',
@@ -117,16 +124,26 @@ const mapCatalog = [
   },
   {
     id: 'water-refill',
-    title: 'Water Refill',
-    category: 'Utilities',
-    description: 'A future layer for refill stations—volunteers will map safe drinking water when this map opens.',
+    title: 'Bars',
+    category: 'Nightlife',
+    description:
+      'A future layer for bars and late-night drink spots—community members can map trusted hangouts when this map opens.',
     status: 'coming-soon',
   },
   {
     id: 'accessibility',
-    title: 'Accessibility',
-    category: 'Mobility',
-    description: 'Ramps, elevators, and easier routes—on the list for neighbors who use wheels or need step-free access.',
+    title: 'Vulcanizing Shop',
+    category: 'Vehicle Service',
+    description:
+      'A future layer for vulcanizing and tire-repair shops—helpful for quick roadside fixes when this map opens.',
+    status: 'coming-soon',
+  },
+  {
+    id: 'resorts',
+    title: 'Resorts',
+    category: 'Leisure',
+    description:
+      'A future layer for resorts, pools, and getaway spots—community members can map relaxing places when this map opens.',
     status: 'coming-soon',
   },
 ]
@@ -179,7 +196,7 @@ function FooterSocialBrandIcon({ network }) {
 const landingStats = [
   { label: 'Places neighbors shared', value: '1,250+' },
   { label: 'People pitching in', value: '320+' },
-  { label: 'Routes helped / mo', value: '9,800+' },
+  { label: 'Routes helped', value: '9,800+' },
   { label: 'Areas on the map', value: '18' },
 ]
 
@@ -349,7 +366,7 @@ const faqs = [
   },
   {
     q: 'What maps are available today?',
-    a: 'Loo Finder, Restaurants & Cafe, and Tambayan 24hrs are live today. Water refill and accessibility are ideas the community may add next—open a card to see what is coming.',
+    a: 'Restrooms, Restaurants & Cafe, and Tambayan 24hrs are live today. Water refill and accessibility are ideas the community may add next—open a card to see what is coming.',
   },
 ]
 
@@ -505,14 +522,20 @@ function LandingMapPreview({ location, theme, pins = [] }) {
           position={[pin.latitude, pin.longitude]}
           icon={previewIconForCollection(pin.collection)}
         >
-          <Tooltip sticky direction="top" opacity={0.92}>
+          <Tooltip
+            permanent
+            direction="top"
+            offset={[0, -8]}
+            opacity={0.96}
+            className={`preview-pin-label preview-pin-label--${previewLabelCategoryKey(pin.collection)}`}
+          >
             {pin.name?.trim() || 'Community pin'}
           </Tooltip>
         </Marker>
       ))}
       {location ? (
         <Marker position={location} icon={previewUserIcon}>
-          <Tooltip sticky direction="top" opacity={0.92}>
+          <Tooltip direction="top" opacity={0.92}>
             Your location
           </Tooltip>
         </Marker>
@@ -730,9 +753,11 @@ export function LandingPage({ theme, setTheme, userLocation, onOpenMap }) {
                   ) : item.id === 'tambayan-24hrs' ? (
                     <Moon size={20} strokeWidth={1.75} />
                   ) : item.id === 'water-refill' ? (
-                    <Droplets size={20} strokeWidth={1.75} />
+                    <Beer size={20} strokeWidth={1.75} />
+                  ) : item.id === 'accessibility' ? (
+                    <Wrench size={20} strokeWidth={1.75} />
                   ) : (
-                    <Accessibility size={20} strokeWidth={1.75} />
+                    <TentTree size={20} strokeWidth={1.75} />
                   )}
                 </span>
                 <span className="saas-chip">{item.category}</span>
