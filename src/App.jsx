@@ -13,8 +13,10 @@ import {
 } from 'firebase/firestore'
 import {
   createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signInWithPopup,
 } from 'firebase/auth'
 import {
   AttributionControl,
@@ -23,14 +25,26 @@ import {
   Polyline,
   Popup,
   TileLayer,
+  Tooltip,
   useMap,
   useMapEvents,
 } from 'react-leaflet'
-import { Bath, Droplets, MirrorRound, Moon, ShowerHead, SlidersHorizontal, Sun, Toilet, X } from 'lucide-react'
+import {
+  Droplets,
+  ImagePlus,
+  MirrorRound,
+  Moon,
+  ShowerHead,
+  SlidersHorizontal,
+  Sun,
+  Toilet,
+  X,
+} from 'lucide-react'
 import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
 import { LandingPage } from './LandingPage'
+import { hasSupabaseConfig, supabase, supabaseBucket } from './supabase'
 
 const EXTRA_ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || '')
   .split(',')
@@ -69,6 +83,16 @@ const userIcon = L.icon({
   iconAnchor: [23, 62],
   popupAnchor: [0, -56],
 })
+
+function BidetAmenityIcon({ size = 18 }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="amenity-custom-icon amenity-custom-icon--bidet"
+      style={{ '--icon-size': `${size}px` }}
+    />
+  )
+}
 
 const COMMUNITY_OVERVIEW_COLLECTIONS = ['loos', 'restaurants_cafes', 'tambayan_24h']
 
@@ -141,6 +165,99 @@ const GEOLOCATION_RETRY_OPTIONS = {
   timeout: 120_000,
 }
 
+const IMAGE_MAX_DIMENSION = 1600
+const IMAGE_UPLOAD_QUALITY = 0.72
+const MAX_PIN_IMAGES = 5
+
+function safeImageBaseName(name) {
+  return String(name || 'image')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-z0-9_-]+/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)
+}
+
+async function imageFileToBitmap(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      return await createImageBitmap(file)
+    } catch {
+      // Fallback to HTMLImageElement decoding below.
+    }
+  }
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(image)
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Image decode failed.'))
+    }
+    image.src = objectUrl
+  })
+}
+
+async function compressImageFile(file) {
+  const decoded = await imageFileToBitmap(file)
+  const width = decoded.width
+  const height = decoded.height
+  const scale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(width, height))
+  const targetWidth = Math.max(1, Math.round(width * scale))
+  const targetHeight = Math.max(1, Math.round(height * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = targetWidth
+  canvas.height = targetHeight
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Canvas compression is unavailable in this browser.')
+  }
+  context.drawImage(decoded, 0, 0, targetWidth, targetHeight)
+  if (typeof decoded.close === 'function') {
+    decoded.close()
+  }
+  const blob = await new Promise((resolve) => {
+    canvas.toBlob((result) => resolve(result), 'image/webp', IMAGE_UPLOAD_QUALITY)
+  })
+  if (!blob) {
+    throw new Error('Could not compress the selected image.')
+  }
+  return blob
+}
+
+async function uploadImagesToSupabase({ files, pinId }) {
+  if (!files?.length) return []
+  if (!hasSupabaseConfig || !supabase) {
+    throw new Error('Supabase Storage is not configured.')
+  }
+  const uploads = files.slice(0, MAX_PIN_IMAGES)
+  const uploadedUrls = []
+  for (let i = 0; i < uploads.length; i += 1) {
+    const file = uploads[i]
+    const compressed = await compressImageFile(file)
+    const baseName = safeImageBaseName(file.name)
+    const path = `pins/${pinId}/${Date.now()}-${i + 1}-${baseName}.webp`
+    const { error: uploadError } = await supabase.storage
+      .from(supabaseBucket)
+      .upload(path, compressed, {
+        contentType: 'image/webp',
+        cacheControl: '31536000',
+        upsert: false,
+      })
+    if (uploadError) {
+      throw new Error(uploadError.message || 'Supabase upload failed.')
+    }
+    const { data } = supabase.storage.from(supabaseBucket).getPublicUrl(path)
+    if (data?.publicUrl) {
+      uploadedUrls.push(data.publicUrl)
+    }
+  }
+  return uploadedUrls
+}
+
 function mapIdToPath(mapId) {
   return MAP_REGISTRY[mapId]?.path ?? '/'
 }
@@ -167,6 +284,13 @@ function markerIconForPin(pin, fallbackIcon) {
   if (c === 'restaurants_cafes') return restaurantIcon
   if (c === 'tambayan_24h') return tambayanIcon
   return fallbackIcon ?? toiletIcon
+}
+
+function pinLabelCategoryKey(pin, activeMapId, activePinsCollection) {
+  const c = pinFirestoreCollection(pin) || activePinsCollection
+  if (c === 'restaurants_cafes' || activeMapId === 'restaurants-cafe') return 'restaurants'
+  if (c === 'tambayan_24h' || activeMapId === 'tambayan-24hrs') return 'tambayan'
+  return 'loos'
 }
 
 function pinBusyKey(pin) {
@@ -202,7 +326,7 @@ function clampStarRating(n) {
 }
 
 const LOO_AMENITY_FIELDS = [
-  { key: 'bidet', label: 'BeDiet', Icon: Bath },
+  { key: 'bidet', label: 'Bidet', Icon: BidetAmenityIcon },
   { key: 'shower', label: 'Shower', Icon: ShowerHead },
   { key: 'cleanWater', label: 'Clean Water', Icon: Droplets },
   { key: 'cleanToilet', label: 'Clean Toilet', Icon: Toilet },
@@ -353,6 +477,9 @@ function App() {
   const [filterCategory, setFilterCategory] = useState('all')
   const [mobileFilterMenuOpen, setMobileFilterMenuOpen] = useState(false)
   const [isMarkerPopupOpen, setIsMarkerPopupOpen] = useState(false)
+  const [lightboxImageUrl, setLightboxImageUrl] = useState('')
+  const [keptImageUrls, setKeptImageUrls] = useState([])
+  const imageInputRef = useRef(null)
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
   const [mapInstance, setMapInstance] = useState(null)
@@ -458,6 +585,7 @@ function App() {
       setFormMode('create')
       setEditingPinId(null)
       setEditingPinCollection(null)
+      setKeptImageUrls([])
       setNewPinCategory('')
       setFilterRating('all')
       setFilterCategory('all')
@@ -632,6 +760,77 @@ function App() {
     [formMode, activeMapId, newPinCategory, editingPinCollection],
   )
 
+  const editingPinImageUrls = useMemo(() => {
+    if (formMode !== 'edit' || !editingPinId) return []
+    const editingPin = pins.find(
+      (pin) =>
+        pin.id === editingPinId &&
+        (editingPinCollection == null || pinFirestoreCollection(pin) === editingPinCollection),
+    )
+    return Array.isArray(editingPin?.imageUrls) ? editingPin.imageUrls : []
+  }, [pins, formMode, editingPinId, editingPinCollection])
+
+  const selectedImagePreviewUrls = useMemo(
+    () =>
+      (form.images || [])
+        .map((file) => {
+          try {
+            return URL.createObjectURL(file)
+          } catch {
+            return null
+          }
+        })
+        .filter(Boolean),
+    [form.images],
+  )
+
+  const selectedNewImageCount = (form.images || []).length
+  const keptCurrentImageCount = formMode === 'edit' ? keptImageUrls.length : 0
+  const selectedImageCount = selectedNewImageCount + keptCurrentImageCount
+  const availableImageSlots = Math.max(0, MAX_PIN_IMAGES - selectedImageCount)
+
+  useEffect(() => {
+    return () => {
+      selectedImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [selectedImagePreviewUrls])
+
+  const handlePickImages = (event) => {
+    const picked = Array.from(event.target.files ?? [])
+    const currentCount = (form.images || []).length
+    const keptCount = formMode === 'edit' ? keptImageUrls.length : 0
+    const remaining = Math.max(0, MAX_PIN_IMAGES - keptCount - currentCount)
+
+    if (remaining <= 0) {
+      setFormError(`You can upload up to ${MAX_PIN_IMAGES} images per pin.`)
+      event.target.value = ''
+      return
+    }
+
+    const toAdd = picked.slice(0, remaining)
+    if (picked.length > remaining) {
+      setFormError(`Only ${remaining} more image${remaining === 1 ? '' : 's'} can be added.`)
+    } else {
+      setFormError('')
+    }
+
+    setForm((current) => ({
+      ...current,
+      images: [...(current.images || []), ...toAdd].slice(0, MAX_PIN_IMAGES),
+    }))
+    event.target.value = ''
+  }
+
+  const toggleKeptImage = (url) => {
+    setKeptImageUrls((current) => {
+      if (current.includes(url)) {
+        return current.filter((item) => item !== url)
+      }
+      const next = [...current, url]
+      return next.slice(0, MAX_PIN_IMAGES)
+    })
+  }
+
   const requestBrowserLocationPermission = async () => {
     if (!navigator.geolocation) {
       return { ok: false, reason: 'unsupported' }
@@ -773,7 +972,56 @@ function App() {
         return { blocked: true }
       }
 
+      const fetchNearbyBusinessLandmarks = async (targetLat, targetLng, excludedName) => {
+        const overpassQuery = `
+[out:json][timeout:12];
+(
+  node(around:50,${targetLat},${targetLng})["name"]["amenity"];
+  node(around:50,${targetLat},${targetLng})["name"]["shop"];
+  node(around:50,${targetLat},${targetLng})["name"]["tourism"];
+  node(around:50,${targetLat},${targetLng})["name"]["leisure"];
+  node(around:50,${targetLat},${targetLng})["name"]["office"];
+  node(around:50,${targetLat},${targetLng})["name"]["building"];
+  way(around:50,${targetLat},${targetLng})["name"]["amenity"];
+  way(around:50,${targetLat},${targetLng})["name"]["shop"];
+  way(around:50,${targetLat},${targetLng})["name"]["tourism"];
+  way(around:50,${targetLat},${targetLng})["name"]["leisure"];
+  way(around:50,${targetLat},${targetLng})["name"]["office"];
+  way(around:50,${targetLat},${targetLng})["name"]["building"];
+  relation(around:50,${targetLat},${targetLng})["name"]["amenity"];
+  relation(around:50,${targetLat},${targetLng})["name"]["shop"];
+  relation(around:50,${targetLat},${targetLng})["name"]["tourism"];
+  relation(around:50,${targetLat},${targetLng})["name"]["leisure"];
+  relation(around:50,${targetLat},${targetLng})["name"]["office"];
+  relation(around:50,${targetLat},${targetLng})["name"]["building"];
+);
+out tags qt 40;
+`.trim()
+        try {
+          const overpassResponse = await fetch('https://overpass-api.de/api/interpreter', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            },
+            body: `data=${encodeURIComponent(overpassQuery)}`,
+          })
+          if (!overpassResponse.ok) return []
+          const overpassData = await overpassResponse.json()
+          const excluded = String(excludedName || '').trim().toLowerCase()
+          return (overpassData?.elements || [])
+            .map((item) => String(item?.tags?.name || '').trim())
+            .filter(Boolean)
+            .filter((name) => name.toLowerCase() !== excluded)
+            .filter((name, idx, arr) => arr.indexOf(name) === idx)
+            .slice(0, 8)
+        } catch {
+          return []
+        }
+      }
+
       if (mergeForm) {
+        const address = data?.address || {}
+        const namedDetails = data?.namedetails || {}
         const autoName =
           data?.name ||
           data?.address?.road ||
@@ -781,10 +1029,82 @@ function App() {
           data?.address?.neighbourhood ||
           data?.address?.suburb ||
           ''
+
+        const nearbyParts = [
+          address.building,
+          address.house,
+          address.amenity,
+          address.shop,
+          address.park,
+          address.garden,
+          address.tourism,
+          address.leisure,
+          address.office,
+          address.attraction,
+          address.aeroway,
+          address.hamlet,
+          address.commercial,
+          address.retail,
+          address.hotel,
+          address.mall,
+          address.neighbourhood,
+          address.suburb,
+          address.village,
+          address.quarter,
+          namedDetails.name,
+          namedDetails.official_name,
+          namedDetails.short_name,
+        ]
+          .map((part) => String(part || '').trim())
+          .filter(Boolean)
+          .filter((part) => part.toLowerCase() !== String(autoName).trim().toLowerCase())
+          .filter((part, idx, arr) => arr.indexOf(part) === idx)
+
+        const fallbackNearbyParts =
+          nearbyParts.length > 0
+            ? nearbyParts
+            : String(data?.display_name || '')
+                .split(',')
+                .map((part) => part.trim())
+                .filter(Boolean)
+                .filter((part) => part.toLowerCase() !== String(autoName).trim().toLowerCase())
+                .filter((part) => {
+                  const lower = part.toLowerCase()
+                  if (
+                    lower.includes('street') ||
+                    lower.includes('road') ||
+                    lower.includes('highway') ||
+                    lower.includes('avenue') ||
+                    lower.includes('barangay') ||
+                    lower.includes('district') ||
+                    lower.includes('city') ||
+                    lower.includes('region') ||
+                    lower.includes('philippines')
+                  ) {
+                    return false
+                  }
+                  return true
+                })
+                .filter((part, idx, arr) => arr.indexOf(part) === idx)
+                .slice(0, 6)
+
+        const nearbyFromOverpass = await fetchNearbyBusinessLandmarks(lat, lng, autoName)
+        const nearbyLandmarksText =
+          nearbyFromOverpass
+            .concat(fallbackNearbyParts)
+            .filter((part, idx, arr) => arr.indexOf(part) === idx)
+            .slice(0, 8)
+            .join(', ') ||
+          [address.neighbourhood, address.suburb, address.village, address.quarter]
+            .map((part) => String(part || '').trim())
+            .filter(Boolean)
+            .filter((part) => part.toLowerCase() !== String(autoName).trim().toLowerCase())
+            .filter((part, idx, arr) => arr.indexOf(part) === idx)
+            .join(', ')
         setForm((current) => ({
           ...current,
           name: current.name || autoName,
-          nearbyLandmarks: current.nearbyLandmarks || data?.display_name || '',
+          nearbyLandmarks: current.nearbyLandmarks || nearbyLandmarksText,
         }))
       }
       return { blocked: false }
@@ -800,21 +1120,18 @@ function App() {
     setError('')
     setNotice('')
     setFormError('')
-    setSaving(false)
 
-    if (formMode === 'edit' && editingPinId && currentUser) {
-      const reverseResult = await reverseGeocode(latlng.lat, latlng.lng, { mergeForm: false })
-      if (reverseResult?.blocked) {
-        setError('Location cannot be pinned (sea/lake/river).')
-        return
-      }
-      setSelectedLocation(latlng)
+    if (form.images.length > 0 && !hasSupabaseConfig) {
+      setFormError('Image upload requires Supabase Storage configuration.')
+      setSaving(false)
       return
     }
+    setSaving(false)
 
     setFormMode('create')
     setEditingPinId(null)
     setEditingPinCollection(null)
+    setKeptImageUrls([])
     setNewPinCategory('')
     setForm({
       name: '',
@@ -843,6 +1160,19 @@ function App() {
     localStorage.setItem('whatsnearby-theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    if (!notice) return undefined
+    const lower = notice.toLowerCase()
+    const shouldAutoDismiss =
+      lower.includes('pin syncing') ||
+      lower.includes('pin saved') ||
+      lower.includes('pin updated') ||
+      lower.includes('pin removed')
+    if (!shouldAutoDismiss) return undefined
+    const id = window.setTimeout(() => setNotice(''), 3200)
+    return () => window.clearTimeout(id)
+  }, [notice])
+
   const openEditPinForm = (pin) => {
     if (!currentUser) {
       setPendingEditPin(pin)
@@ -858,6 +1188,12 @@ function App() {
         return
       }
     }
+
+    // Keep the UI focused: close any open map popup before showing edit form.
+    if (mapInstance) {
+      mapInstance.closePopup()
+    }
+    setIsMarkerPopupOpen(false)
 
     setFormMode('edit')
     setEditingPinId(pin.id)
@@ -878,6 +1214,7 @@ function App() {
       cleanToilet: Boolean(pin.cleanToilet),
       mirror: Boolean(pin.mirror),
     })
+    setKeptImageUrls(Array.isArray(pin.imageUrls) ? pin.imageUrls.slice(0, MAX_PIN_IMAGES) : [])
     setFormError('')
     setError('')
     setNotice('')
@@ -908,6 +1245,28 @@ function App() {
       }
     } catch (authSubmitError) {
       setAuthError(authSubmitError?.message || 'Authentication failed.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const loginWithGoogle = async () => {
+    if (!auth) return
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const provider = new GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+      await signInWithPopup(auth, provider)
+      setShowAuthModal(false)
+      setNotice('Authentication successful.')
+      if (pendingEditPin) {
+        const targetPin = pendingEditPin
+        setPendingEditPin(null)
+        openEditPinForm(targetPin)
+      }
+    } catch (googleAuthError) {
+      setAuthError(googleAuthError?.message || 'Google login failed.')
     } finally {
       setAuthLoading(false)
     }
@@ -1076,6 +1435,10 @@ function App() {
       setFormError('Location name is required.')
       return
     }
+    if ((form.images || []).length > MAX_PIN_IMAGES) {
+      setFormError(`You can upload up to ${MAX_PIN_IMAGES} images per pin.`)
+      return
+    }
     const numericRating = Number(form.rating)
     if (!form.rating || Number.isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
       setFormError('Please set a rating between 1 and 5.')
@@ -1159,11 +1522,36 @@ function App() {
       }
 
       const claimOwner = Boolean(priorPin && !priorPin.ownerUid && currentUser?.uid)
+      let nextImageUrls = [...keptImageUrls]
+      if (nextImageUrls.length + (form.images || []).length > MAX_PIN_IMAGES) {
+        setFormError(`You can keep/upload up to ${MAX_PIN_IMAGES} images per pin.`)
+        setSaving(false)
+        return
+      }
+      if (form.images.length > 0) {
+        try {
+          setNotice('Compressing and uploading images...')
+          const uploadedImageUrls = await uploadImagesToSupabase({ files: form.images, pinId: targetId })
+          if (uploadedImageUrls.length > 0) {
+            nextImageUrls = [...nextImageUrls, ...uploadedImageUrls].slice(0, MAX_PIN_IMAGES)
+          }
+        } catch (imageError) {
+          setFormError(imageError?.message || 'Image upload failed.')
+          setSaving(false)
+          return
+        }
+      }
 
       setLocalPins((current) =>
         current.map((pin) =>
           pin.id === targetId
-            ? { ...pin, ...optimisticPin, id: targetId, ...(claimOwner ? { ownerUid: currentUser.uid } : {}) }
+            ? {
+                ...pin,
+                ...optimisticPin,
+                id: targetId,
+                imageUrls: nextImageUrls,
+                ...(claimOwner ? { ownerUid: currentUser.uid } : {}),
+              }
             : pin,
         ),
       )
@@ -1177,6 +1565,7 @@ function App() {
             price: optimisticPin.price,
             isFree: optimisticPin.isFree,
             details: optimisticPin.details,
+            imageUrls: nextImageUrls,
             latitude: selectedLocation.lat,
             longitude: selectedLocation.lng,
             ...(writeColl === 'loos' ? loosAmenityValues(form) : {}),
@@ -1197,6 +1586,7 @@ function App() {
                   price: optimisticPin.price,
                   isFree: optimisticPin.isFree,
                   details: optimisticPin.details,
+                  imageUrls: nextImageUrls,
                   latitude: selectedLocation.lat,
                   longitude: selectedLocation.lng,
                   ...(writeColl === 'loos' ? loosAmenityValues(form) : {}),
@@ -1210,6 +1600,7 @@ function App() {
         setFormMode('create')
         setEditingPinId(null)
         setEditingPinCollection(null)
+        setKeptImageUrls([])
         setNewPinCategory('')
       } catch (saveError) {
         setError(saveError?.message || 'Failed to update pin.')
@@ -1233,9 +1624,23 @@ function App() {
     let syncedPinId = null
     try {
       const pinRef = doc(collection(db, createTargetCollection))
+      let uploadedImageUrls = []
+      if (form.images.length > 0) {
+        try {
+          setNotice('Compressing and uploading images...')
+          uploadedImageUrls = await uploadImagesToSupabase({ files: form.images, pinId: pinRef.id })
+        } catch (imageError) {
+          setFormError(imageError?.message || 'Image upload failed.')
+          setLocalPins((current) => current.filter((pin) => pin.id !== tempId))
+          setSaving(false)
+          return
+        }
+      }
+
       const syncedOptimisticPin = {
         ...optimisticPin,
         id: pinRef.id,
+        imageUrls: uploadedImageUrls,
         localOnly: false,
         collection: createTargetCollection,
         ratingCount: 1,
@@ -1263,11 +1668,7 @@ function App() {
         'Firebase save timed out. Check internet or Firestore rules.',
       )
 
-      setNotice(
-        form.images.length
-          ? 'Pin saved to Firebase (images are skipped; Storage disabled).'
-          : 'Pin syncing to Firebase...',
-      )
+      setNotice('Pin saved successfully.')
     } catch (saveError) {
       setLocalPins((current) =>
         current.map((pin) =>
@@ -1288,7 +1689,8 @@ function App() {
 
     const margin = 12
     const preferredWidth = 392
-    const estimatedModalHeight = 480
+    /** Edit form is taller (images, keep/remove, amenities); used only to pick above vs below the pin. */
+    const estimatedModalHeight = formMode === 'edit' ? 720 : 520
     const anchorOffset = 24
 
     function layoutAnchoredModal() {
@@ -1323,10 +1725,20 @@ function App() {
       const availableAbove = selectedScreenPos.y - topChromeReserve
       const availableBelow = shellRect.height - selectedScreenPos.y - margin - footerReserve
       const placeBelow = availableAbove < estimatedModalHeight && availableBelow > availableAbove
-      const top = placeBelow
-        ? Math.min(selectedScreenPos.y + anchorOffset, shellRect.height - margin - footerReserve)
-        : Math.max(selectedScreenPos.y - anchorOffset, topChromeReserve)
       const maxHeight = Math.max(220, (placeBelow ? availableBelow : availableAbove) - 14)
+
+      /*
+       * Above pin: transform translate(-50%, -100%) — modal bottom sits at `top`, so its top is at top − height.
+       * map-shell uses overflow:hidden, so we need top >= topChromeReserve + maxHeight or the panel is clipped.
+       * Below pin: top is the modal’s top edge; keep top + maxHeight inside the shell above the footer.
+       */
+      const shellBottom = shellRect.height - margin - footerReserve
+      let top = placeBelow
+        ? Math.min(selectedScreenPos.y + anchorOffset, shellBottom - maxHeight)
+        : Math.max(selectedScreenPos.y - anchorOffset, topChromeReserve + maxHeight)
+      if (placeBelow) {
+        top = Math.max(top, topChromeReserve)
+      }
 
       setShowBelowPin(placeBelow)
       setAnchoredModalStyle({
@@ -1345,7 +1757,7 @@ function App() {
       window.removeEventListener('resize', layoutAnchoredModal)
       window.removeEventListener('orientationchange', layoutAnchoredModal)
     }
-  }, [selectedLocation, selectedScreenPos])
+  }, [selectedLocation, selectedScreenPos, formMode])
 
   useEffect(() => {
     if (!selectedLocation || !mapShellRef.current || !mapInstance) return
@@ -1545,7 +1957,7 @@ function App() {
           minZoom={isMobileViewport ? 13 : 12}
           className="map"
           tap={false}
-          scrollWheelZoom={false}
+          scrollWheelZoom={!isMobileViewport}
           zoomControl={false}
           attributionControl={false}
         >
@@ -1559,11 +1971,11 @@ function App() {
           />
           <AttributionControl position="bottomleft" prefix={false} />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url={
               theme === 'dark'
                 ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
             }
           />
 
@@ -1577,6 +1989,18 @@ function App() {
                 popupclose: () => setIsMarkerPopupOpen(false),
               }}
             >
+              <Tooltip
+                permanent
+                direction="top"
+                offset={[0, -8]}
+                className={`pin-name-label pin-name-label--${pinLabelCategoryKey(
+                  pin,
+                  activeMapId,
+                  activePinsCollection,
+                )}`}
+              >
+                {pin.name || 'Unnamed place'}
+              </Tooltip>
               <Popup
                 maxWidth={isMobileViewport ? 280 : 360}
                 autoPan
@@ -1589,7 +2013,9 @@ function App() {
                       {mapLayerLabel(pin.collection)}
                     </p>
                   ) : null}
+                  <p className="popup-field-label">Location Name</p>
                   <h3>{pin.name}</h3>
+                  <p className="popup-field-label">Nearby Landmarks</p>
                   <p>{pin.nearbyLandmarks || 'No nearby landmark'}</p>
                   <Stars value={pin.rating} />
                   {!pin.localOnly && hasFirebaseConfig ? (
@@ -1617,12 +2043,25 @@ function App() {
                     </div>
                   ) : null}
                   {Array.isArray(pin.imageUrls) && pin.imageUrls.length > 0 ? (
-                    <div className="gallery">
+                    <>
+                      <p className="popup-field-label">Images</p>
+                      <div className="gallery">
                       {pin.imageUrls.map((url) => (
-                        <img key={url} src={url} alt={pin.name} loading="lazy" />
+                        <button
+                          key={url}
+                          type="button"
+                          className="image-thumb-btn"
+                          onClick={() => setLightboxImageUrl(url)}
+                          aria-label="View image in large size"
+                        >
+                          <img src={url} alt={pin.name} loading="lazy" />
+                          <span className="image-thumb-hint">Click to view</span>
+                        </button>
                       ))}
-                    </div>
+                      </div>
+                    </>
                   ) : null}
+                  <p className="popup-field-label">Details</p>
                   <p>{pin.details || 'No additional details.'}</p>
                   {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' &&
                   LOO_AMENITY_FIELDS.some(({ key }) => pin[key]) ? (
@@ -1630,7 +2069,7 @@ function App() {
                       {LOO_AMENITY_FIELDS.filter(({ key }) => pin[key]).map(({ key, label, Icon }) => (
                         <span key={key} className="loo-amenity-icon-badge" role="listitem" title={label}>
                           <Icon size={18} strokeWidth={1.75} aria-hidden />
-                          <span className="visually-hidden">{label}</span>
+                          <span className="loo-amenity-icon-label">{label}</span>
                         </span>
                       ))}
                     </div>
@@ -1877,14 +2316,104 @@ function App() {
             <label>
               Images
               <input
+                ref={imageInputRef}
                 type="file"
                 accept="image/*"
                 multiple
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, images: Array.from(event.target.files ?? []) }))
-                }
+                className="modal-image-input-hidden"
+                onChange={handlePickImages}
               />
             </label>
+            <div className="modal-image-uploader-row">
+              <p className="hint modal-image-slot-hint">
+                Up to 5 images per pin ({selectedImageCount}/5 selected, {availableImageSlots} available).
+              </p>
+            </div>
+            {formMode === 'edit' ? (
+              <div className="modal-image-preview-block" aria-label="Current uploaded images">
+                <p className="modal-image-preview-title">Current uploaded images</p>
+                <div className="modal-image-preview-grid">
+                  {availableImageSlots > 0 ? (
+                    <button
+                      type="button"
+                      className="modal-image-add-slot"
+                      onClick={() => imageInputRef.current?.click()}
+                      aria-label="Add image"
+                    >
+                      <ImagePlus className="upload-more-icon-tile" aria-hidden strokeWidth={1.65} />
+                    </button>
+                  ) : null}
+                  {editingPinImageUrls.map((url) => (
+                    <div key={url} className="current-image-item">
+                      <button
+                        type="button"
+                        className="image-thumb-btn image-thumb-btn--modal"
+                        onClick={() => setLightboxImageUrl(url)}
+                        aria-label="View current uploaded image in large size"
+                      >
+                        <img src={url} alt="Current pin upload" className="modal-image-preview" />
+                        <span className="image-thumb-hint">Click to view</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`current-image-toggle-btn secondary${keptImageUrls.includes(url) ? '' : ' is-removed'}`}
+                        onClick={() => toggleKeptImage(url)}
+                      >
+                        {keptImageUrls.includes(url) ? 'Keep' : 'Removed'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {formMode !== 'edit' && (availableImageSlots > 0 || selectedImagePreviewUrls.length > 0) ? (
+              <div className="modal-image-preview-block" aria-label="Selected images preview">
+                <p className="modal-image-preview-title">Selected images</p>
+                <div className="modal-image-preview-grid">
+                  {availableImageSlots > 0 ? (
+                    <button
+                      type="button"
+                      className="modal-image-add-slot"
+                      onClick={() => imageInputRef.current?.click()}
+                      aria-label="Add image"
+                    >
+                      <ImagePlus className="upload-more-icon-tile" aria-hidden strokeWidth={1.65} />
+                    </button>
+                  ) : null}
+                  {selectedImagePreviewUrls.map((url) => (
+                    <button
+                      key={url}
+                      type="button"
+                      className="image-thumb-btn image-thumb-btn--modal"
+                      onClick={() => setLightboxImageUrl(url)}
+                      aria-label="View selected image in large size"
+                    >
+                      <img src={url} alt="Selected upload preview" className="modal-image-preview" />
+                      <span className="image-thumb-hint">Click to view</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {formMode === 'edit' && selectedImagePreviewUrls.length > 0 ? (
+              <div className="modal-image-preview-block" aria-label="New selected images preview">
+                <p className="modal-image-preview-title">New selected images (will replace current)</p>
+                <div className="modal-image-preview-grid">
+                  {selectedImagePreviewUrls.map((url) => (
+                    <button
+                      key={url}
+                      type="button"
+                      className="image-thumb-btn image-thumb-btn--modal"
+                      onClick={() => setLightboxImageUrl(url)}
+                      aria-label="View selected image in large size"
+                    >
+                      <img src={url} alt="Selected upload preview" className="modal-image-preview" />
+                      <span className="image-thumb-hint">Click to view</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <label>
               Additional Details
@@ -1952,6 +2481,23 @@ function App() {
             </div>
             <button
               type="button"
+              className="secondary google-auth-btn"
+              onClick={loginWithGoogle}
+              disabled={authLoading}
+            >
+              {authLoading ? (
+                'Please wait...'
+              ) : (
+                <>
+                  <span className="google-logo" aria-hidden="true">
+                    <img src="/google-logo.png" alt="" width="18" height="18" loading="lazy" />
+                  </span>
+                  Continue with Google
+                </>
+              )}
+            </button>
+            <button
+              type="button"
               className="link-btn"
               onClick={() => {
                 setAuthMode((current) => (current === 'signup' ? 'login' : 'signup'))
@@ -1963,6 +2509,30 @@ function App() {
                 : "Don't have an account? Create one"}
             </button>
           </form>
+        </section>
+      ) : null}
+      {lightboxImageUrl ? (
+        <section
+          className="image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Large image preview"
+          onClick={() => setLightboxImageUrl('')}
+        >
+          <button
+            type="button"
+            className="image-lightbox-close"
+            onClick={() => setLightboxImageUrl('')}
+            aria-label="Close image preview"
+          >
+            ×
+          </button>
+          <img
+            src={lightboxImageUrl}
+            alt="Large preview"
+            className="image-lightbox-img"
+            onClick={(event) => event.stopPropagation()}
+          />
         </section>
       ) : null}
     </main>
