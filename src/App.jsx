@@ -1801,7 +1801,6 @@ function App() {
               </button>
             </div>
             <p className="modal-warning">⚠ Unsaved pins will disappear</p>
-            <span className="modal-pointer" aria-hidden="true"></span>
           </form>
         ) : null}
       </section>
