@@ -154,6 +154,20 @@ html:has(main.app-shell) body {
   max-width: 100%;
 }
 
+.top-category-text {
+  margin: 0;
+  min-width: min(220px, 56vw);
+  text-align: right;
+  font-size: 0.84rem;
+  line-height: 1.15;
+  font-weight: 700;
+  color: #1e3a8a;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 36px;
+}
+
 .controls-row {
   display: flex;
   align-items: center;
@@ -182,6 +196,18 @@ html:has(main.app-shell) body {
 }
 
 .map-quick-actions--floating {
+  display: none;
+}
+
+.mobile-filter-menu-btn {
+  display: none;
+}
+
+.mobile-filter-panel {
+  display: none;
+}
+
+.mobile-filter-menu-row {
   display: none;
 }
 
@@ -279,6 +305,10 @@ button:disabled {
 
 .app-shell.dark .top-bar p {
   color: #cbd5e1;
+}
+
+.app-shell.dark .top-category-text {
+  color: #bae6fd;
 }
 
 .app-shell.dark .top-bar {
@@ -1369,6 +1399,28 @@ button:disabled {
   background: #64748b;
 }
 
+.popup-main-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.popup-main-actions .route-btn {
+  margin-top: 0;
+}
+
+@media (min-width: 769px) {
+  .popup-main-actions {
+    gap: 0.45rem;
+  }
+
+  .popup-main-actions .route-btn {
+    min-height: 38px;
+    font-size: 0.8rem;
+  }
+}
+
 .admin-pill {
   align-self: center;
   padding: 0.2rem 0.55rem;
@@ -1595,7 +1647,7 @@ button:disabled {
   .top-bar {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: flex-start;
+    align-items: center;
     justify-content: flex-start;
     padding: 0.65rem 0.75rem;
     border-radius: 12px;
@@ -1606,6 +1658,7 @@ button:disabled {
     max-width: 100%;
     flex: 1;
     min-width: 0;
+    align-items: center;
   }
 
   .top-bar h1 {
@@ -1622,6 +1675,105 @@ button:disabled {
     max-width: min(180px, 72vw);
   }
 
+  .mobile-filter-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.45rem !important;
+    min-width: 2.45rem;
+    height: 2.45rem;
+    min-height: 2.45rem;
+    padding: 0;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    line-height: 1;
+    margin-left: 0;
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow:
+      0 10px 24px rgba(37, 99, 235, 0.35),
+      0 2px 8px rgba(15, 23, 42, 0.2);
+    backdrop-filter: blur(10px);
+    transition:
+      transform 180ms ease,
+      box-shadow 220ms ease,
+      background 220ms ease,
+      border-color 220ms ease;
+  }
+
+  .mobile-filter-menu-row {
+    display: flex;
+    justify-content: flex-end;
+    align-self: flex-end;
+    margin-top: 0.15rem;
+    margin-right: 0.05rem;
+    position: relative;
+    top: auto;
+    right: auto;
+    z-index: 1305;
+    pointer-events: auto;
+  }
+
+  .mobile-filter-panel {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0;
+    margin-left: 0;
+    width: min(13.2rem, calc(100% - 0.9rem));
+    padding: 0.5rem 0.56rem;
+    border-radius: 12px;
+    border: 1px solid #dbe3ee;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(6px);
+    align-self: flex-end;
+    margin-top: 0.34rem;
+    margin-right: 0.05rem;
+    position: relative;
+    top: auto;
+    right: auto;
+    z-index: 1304;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+    transform-origin: top right;
+    visibility: hidden;
+    transition:
+      opacity 200ms ease,
+      transform 220ms ease,
+      visibility 220ms step-end;
+  }
+
+  .mobile-filter-panel.is-open {
+    pointer-events: auto;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+    transition:
+      opacity 220ms ease,
+      transform 240ms cubic-bezier(0.2, 0.9, 0.25, 1.08),
+      visibility 0ms;
+  }
+
+  .mobile-filter-field {
+    display: grid;
+    gap: 0.18rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .mobile-filter-field .control-input {
+    display: block;
+    width: 100%;
+    height: 34px;
+    font-size: max(16px, 0.78rem);
+    padding: 0.25rem 0.45rem;
+    border-radius: 8px;
+  }
+
   .map-quick-actions--inline {
     display: none !important;
   }
@@ -1636,8 +1788,8 @@ button:disabled {
     transform: translateX(-50%);
     flex-direction: row;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.4rem 0.55rem;
+    gap: 0.26rem;
+    padding: 0.28rem 0.36rem;
     margin: 0;
     background: rgba(255, 255, 255, 0.97);
     border: 1px solid #e2e8f0;
@@ -1647,7 +1799,7 @@ button:disabled {
       0 2px 8px rgba(15, 23, 42, 0.06);
     backdrop-filter: blur(10px);
     pointer-events: auto;
-    max-width: calc(100vw - 1.25rem);
+    max-width: calc(100vw - 0.85rem);
     box-sizing: border-box;
     transition:
       opacity 0.2s ease,
@@ -1658,9 +1810,9 @@ button:disabled {
   .map-quick-actions--floating button.secondary {
     margin: 0;
     border-radius: 999px;
-    min-height: 44px;
-    padding: 0.45rem 0.9rem;
-    font-size: 0.8rem;
+    min-height: 38px;
+    padding: 0.32rem 0.62rem;
+    font-size: 0.73rem;
     font-weight: 600;
     white-space: nowrap;
     width: auto;
@@ -1687,52 +1839,52 @@ button:disabled {
     transform: translate(-50%, 120%);
   }
 
-  /* Toolbar dock sits above the rounded quick-action pill */
+  .mobile-filter-menu-btn:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.01);
+  }
+
+  .mobile-filter-menu-btn.is-open {
+    transform: translateY(-1px) scale(1.03) rotate(-2deg);
+    box-shadow:
+      0 12px 28px rgba(37, 99, 235, 0.42),
+      0 4px 10px rgba(15, 23, 42, 0.24);
+  }
+
+  /* Keep category control inside the top bar on mobile */
   .top-bar-actions.map-toolbar-dock {
-    position: fixed;
-    left: max(0.45rem, env(safe-area-inset-left, 0px));
-    right: max(0.45rem, env(safe-area-inset-right, 0px));
-    bottom: max(0.4rem, calc(env(safe-area-inset-bottom, 0px) + 2.65rem + 3.85rem));
-    z-index: 630;
-    width: auto;
-    max-height: min(46dvh, 320px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    z-index: auto;
+    width: min(240px, 62vw);
+    max-height: none;
+    overflow: visible;
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 0.55rem;
-    padding: 0.65rem 0.75rem;
+    gap: 0.35rem;
+    padding: 0;
     margin: 0;
-    background: rgba(255, 255, 255, 0.97);
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    box-shadow:
-      0 -6px 24px rgba(15, 23, 42, 0.1),
-      0 12px 40px rgba(15, 23, 42, 0.08);
-    backdrop-filter: blur(10px);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
     pointer-events: auto;
-    transition:
-      opacity 0.2s ease,
-      transform 0.22s ease,
-      visibility 0.22s ease;
   }
 
   .app-shell.dark .top-bar-actions.map-toolbar-dock {
-    background: rgba(15, 23, 42, 0.96);
-    border-color: #334155;
-    box-shadow:
-      0 -8px 28px rgba(0, 0, 0, 0.35),
-      0 12px 40px rgba(0, 0, 0, 0.25);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
   }
 
   .app-shell:has(.anchored-modal) .map-toolbar-dock {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transform: translateY(calc(100% + 24px));
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
   }
 
   .top-bar-actions.map-toolbar-dock > *,
@@ -1781,6 +1933,18 @@ button:disabled {
     box-sizing: border-box;
   }
 
+  /* Hide theme switch on mobile map toolbar/dock */
+  .top-bar .theme-toggle,
+  .map-toolbar-dock .theme-toggle {
+    display: none;
+  }
+
+  /* Keep top bar focused: show only category filter controls */
+  .map-toolbar-dock .controls-row-bottom,
+  .top-bar .back-to-maps-btn {
+    display: none;
+  }
+
   .map .leaflet-bottom.leaflet-right {
     margin-bottom: clamp(12rem, 34dvh, 17rem);
   }
@@ -1820,26 +1984,39 @@ button:disabled {
   }
 
   .popup-content h3 {
-    font-size: 1.02rem;
-    line-height: 1.25;
+    font-size: 0.96rem;
+    line-height: 1.18;
     word-wrap: break-word;
     overflow-wrap: anywhere;
   }
 
   .popup-content .hint {
-    font-size: 0.78rem;
+    font-size: 0.72rem;
+  }
+
+  .popup-content {
+    font-size: 0.82rem;
+  }
+
+  .popup-content p {
+    margin: 0.18rem 0;
+    line-height: 1.25;
   }
 
   .route-btn {
-    min-height: 44px;
-    margin-top: 0.45rem;
-    font-size: 0.88rem;
+    min-height: 34px;
+    margin-top: 0.26rem;
+    font-size: 0.76rem;
+    padding: 0.32rem 0.6rem;
+    border-radius: 9px;
   }
 
   .quick-rate-star {
-    min-height: 44px;
-    min-width: 2.6rem;
+    min-height: 32px;
+    min-width: 1.9rem;
     flex: 1 1 calc(20% - 0.3rem);
+    font-size: 0.86rem;
+    padding: 0.2rem 0.15rem;
   }
 
   .admin-pin-actions .route-btn {
@@ -1850,23 +2027,41 @@ button:disabled {
     align-self: center;
   }
 
+  .app-shell.dark .mobile-filter-panel {
+    background: rgba(15, 23, 42, 0.94);
+    border-color: #334155;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.38);
+  }
+
+  .app-shell.dark .mobile-filter-menu-btn {
+    background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 10px 24px rgba(14, 165, 233, 0.28),
+      0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+
+  .app-shell.dark .mobile-filter-field {
+    color: #cbd5e1;
+  }
+
   .anchored-modal {
     position: absolute;
-    left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
-    right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+    left: 50% !important;
+    right: auto !important;
     top: auto !important;
     bottom: max(0.5rem, calc(env(safe-area-inset-bottom, 0px) + min(13rem, 34dvh))) !important;
-    width: auto !important;
-    max-width: none !important;
+    width: min(22rem, calc(100% - 1.3rem)) !important;
+    max-width: min(22rem, calc(100% - 1.3rem)) !important;
     max-height: min(82dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 7.5rem)) !important;
-    transform: none !important;
+    transform: translateX(-50%) !important;
     border-radius: 14px 14px 12px 12px;
-    padding: 0.65rem 0.75rem 0.55rem !important;
+    padding: 0.52rem 0.6rem 0.48rem !important;
     -webkit-overflow-scrolling: touch;
   }
 
   .anchored-modal.modal.popup-form {
-    padding: 0.65rem 0.75rem 0.55rem;
+    padding: 0.52rem 0.6rem 0.48rem;
   }
 
   /* Pin form open: dock is hidden — sit just above the footer */
@@ -1886,8 +2081,8 @@ button:disabled {
 
   .anchored-modal .popup-form .form-rating-star {
     min-width: 2.75rem;
-    min-height: 44px;
-    padding: 0.35rem 0.25rem;
+    min-height: 40px;
+    padding: 0.25rem 0.22rem;
   }
 
   .popup-form {
@@ -1909,12 +2104,19 @@ button:disabled {
   .anchored-modal .modal-close {
     top: 0.35rem;
     right: max(0.35rem, env(safe-area-inset-right, 0px));
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 38px;
+    min-height: 38px;
   }
 
   .modal-warning {
-    font-size: 0.8rem;
+    font-size: 0.74rem;
+  }
+
+  .anchored-modal .modal-actions button[type='submit'] {
+    width: min(100%, 10.8rem);
+    min-height: 38px;
+    font-size: 0.78rem;
+    padding: 0.4rem 0.75rem;
   }
 
   .auth-backdrop {
@@ -1938,15 +2140,18 @@ button:disabled {
   }
 
   .map .leaflet-popup-content-wrapper {
-    max-width: min(280px, calc(100vw - 3.5rem));
-    max-height: min(65dvh, 420px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    max-width: min(290px, calc(100vw - 1rem));
+    max-height: none;
+    overflow-y: visible;
   }
 
   .map .leaflet-popup-tip-container {
     width: 24px;
     height: 12px;
+  }
+
+  .map .leaflet-popup-content {
+    margin: 8px 10px;
   }
 }
 
@@ -1978,22 +2183,18 @@ button:disabled {
 
   .map-quick-actions--floating {
     bottom: max(0.35rem, calc(env(safe-area-inset-bottom, 0px) + 2.35rem));
-    padding: 0.32rem 0.45rem;
-    gap: 0.3rem;
+    padding: 0.24rem 0.32rem;
+    gap: 0.24rem;
   }
 
   .map-quick-actions--floating button.secondary {
-    padding: 0.4rem 0.7rem;
-    font-size: 0.76rem;
+    min-height: 35px;
+    padding: 0.28rem 0.54rem;
+    font-size: 0.7rem;
   }
 
   .top-bar-actions.map-toolbar-dock {
-    left: max(0.35rem, env(safe-area-inset-left, 0px));
-    right: max(0.35rem, env(safe-area-inset-right, 0px));
-    bottom: max(0.3rem, calc(env(safe-area-inset-bottom, 0px) + 2.35rem + 3.65rem));
-    padding: 0.55rem 0.65rem;
-    max-height: min(44dvh, 300px);
-    border-radius: 12px;
+    width: min(220px, 64vw);
   }
 
   .map .leaflet-bottom.leaflet-right {
@@ -2010,22 +2211,49 @@ button:disabled {
     font-size: 0.8rem;
   }
 
+  .map .leaflet-popup-content-wrapper {
+    max-width: min(300px, calc(100vw - 0.8rem));
+    max-height: none;
+    border-radius: 10px;
+  }
+
+  .map .leaflet-popup-content {
+    margin: 7px 9px;
+  }
+
+  .quick-rate-star {
+    min-height: 30px;
+    min-width: 1.8rem;
+    font-size: 0.82rem;
+  }
+
+  .route-btn {
+    min-height: 32px;
+    font-size: 0.74rem;
+    padding: 0.3rem 0.56rem;
+  }
+
   .anchored-modal {
-    left: max(0.35rem, env(safe-area-inset-left, 0px)) !important;
-    right: max(0.35rem, env(safe-area-inset-right, 0px)) !important;
+    left: 50% !important;
+    right: auto !important;
     bottom: max(0.35rem, calc(env(safe-area-inset-bottom, 0px) + 2.65rem)) !important;
+    width: min(20rem, calc(100% - 0.8rem)) !important;
+    max-width: min(20rem, calc(100% - 0.8rem)) !important;
     max-height: min(78dvh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 6.75rem)) !important;
+    transform: translateX(-50%) !important;
     border-radius: 12px 12px 10px 10px;
-    padding: 0.55rem 0.65rem 0.5rem !important;
+    padding: 0.46rem 0.52rem 0.42rem !important;
   }
 
   .anchored-modal.modal.popup-form {
-    padding: 0.55rem 0.65rem 0.5rem;
+    padding: 0.46rem 0.52rem 0.42rem;
   }
 
   .anchored-modal .modal-actions button[type='submit'] {
-    width: 100%;
-    min-height: 44px;
+    width: min(100%, 10rem);
+    min-height: 36px;
+    font-size: 0.76rem;
+    padding: 0.38rem 0.7rem;
   }
 
   .auth-actions {

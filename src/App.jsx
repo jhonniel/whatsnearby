@@ -15,7 +15,6 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signOut,
 } from 'firebase/auth'
 import {
   AttributionControl,
@@ -27,7 +26,7 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet'
-import { Bath, Droplets, MirrorRound, Moon, ShowerHead, Sun, Toilet } from 'lucide-react'
+import { Bath, Droplets, MirrorRound, ShowerHead, SlidersHorizontal, Toilet, X } from 'lucide-react'
 import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
@@ -351,9 +350,15 @@ function App() {
   const [notice, setNotice] = useState('')
   const [formError, setFormError] = useState('')
   const [filterRating, setFilterRating] = useState('all')
+  const [filterCategory, setFilterCategory] = useState('all')
+  const [mobileFilterMenuOpen, setMobileFilterMenuOpen] = useState(false)
+  const [isMarkerPopupOpen, setIsMarkerPopupOpen] = useState(false)
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
   const [mapInstance, setMapInstance] = useState(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 768 : false,
+  )
   const [anchoredModalStyle, setAnchoredModalStyle] = useState({})
   const [showBelowPin, setShowBelowPin] = useState(false)
   const [theme, setTheme] = useState(
@@ -403,6 +408,12 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const onResize = () => setIsMobileViewport(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
     const nextPath = activeMapId ? mapIdToPath(activeMapId) : '/'
     if (window.location.pathname !== nextPath) {
       window.history.pushState({}, '', nextPath)
@@ -449,6 +460,8 @@ function App() {
       setEditingPinCollection(null)
       setNewPinCategory('')
       setFilterRating('all')
+      setFilterCategory('all')
+      setMobileFilterMenuOpen(false)
 
       if (!hasFirebaseConfig) {
         setLoadingPins(false)
@@ -578,9 +591,15 @@ function App() {
   const pinMarkerIcon = activeMapConfig.pinIcon ?? toiletIcon
 
   const visiblePins = useMemo(() => {
-    if (filterRating === 'all') return pins
-    return pins.filter((pin) => pin.rating >= Number(filterRating))
-  }, [pins, filterRating])
+    let next = pins
+    if (activeMapId === 'community-map' && filterCategory !== 'all') {
+      next = next.filter((pin) => pinFirestoreCollection(pin) === filterCategory)
+    }
+    if (filterRating !== 'all') {
+      next = next.filter((pin) => pin.rating >= Number(filterRating))
+    }
+    return next
+  }, [pins, filterRating, filterCategory, activeMapId])
 
   const showLooAmenitiesFieldset = useMemo(
     () =>
@@ -825,12 +844,6 @@ function App() {
     } finally {
       setAuthLoading(false)
     }
-  }
-
-  const handleLogout = async () => {
-    if (!auth) return
-    await signOut(auth)
-    setNotice('Logged out.')
   }
 
   const withTimeout = (promise, timeoutMs, message) =>
@@ -1220,11 +1233,17 @@ function App() {
       const marginX = narrow ? 8 : margin
       const appShell = shell.closest('main.app-shell')
       const topChromeEl = appShell?.querySelector('.map-chrome-layer')
+      const mobileFilterRowEl = appShell?.querySelector('.mobile-filter-menu-row')
+      const mobileFilterPanelEl = appShell?.querySelector('.mobile-filter-panel')
       const footerEl = appShell?.querySelector('.map-footer-layer')
+      const visibleHeight = (el) => {
+        if (!el || !(el instanceof HTMLElement)) return 0
+        const style = window.getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return 0
+        return el.getBoundingClientRect().height
+      }
       const topChromeReserve =
-        topChromeEl && typeof topChromeEl.getBoundingClientRect === 'function'
-          ? topChromeEl.getBoundingClientRect().height + 10
-          : margin
+        visibleHeight(topChromeEl) + visibleHeight(mobileFilterRowEl) + visibleHeight(mobileFilterPanelEl) + 10
       const footerReserve =
         footerEl && typeof footerEl.getBoundingClientRect === 'function'
           ? footerEl.getBoundingClientRect().height + 10
@@ -1267,6 +1286,8 @@ function App() {
     const appShell = mapShellRef.current.closest('main.app-shell')
 
     const topChromeEl = appShell?.querySelector('.map-chrome-layer')
+    const mobileFilterRowEl = appShell?.querySelector('.mobile-filter-menu-row')
+    const mobileFilterPanelEl = appShell?.querySelector('.mobile-filter-panel')
     const footerEl = appShell?.querySelector('.map-footer-layer')
     const dockEl = appShell?.querySelector('.map-toolbar-dock')
     const quickActionsEl = appShell?.querySelector('.map-quick-actions--floating')
@@ -1279,7 +1300,7 @@ function App() {
       return el.getBoundingClientRect().height
     }
 
-    const topSafe = visibleHeight(topChromeEl) + 14
+    const topSafe = visibleHeight(topChromeEl) + visibleHeight(mobileFilterRowEl) + visibleHeight(mobileFilterPanelEl) + 14
     const bottomSafe =
       visibleHeight(footerEl) +
       visibleHeight(dockEl) +
@@ -1320,16 +1341,54 @@ function App() {
             height={48}
             decoding="async"
           />
-          <div className="brand-block-titles">
-            <h1>{activeMapConfig.mapTitle}</h1>
-            <p>{activeMapConfig.tagline || 'Click map to pin, then fill the popup form.'}</p>
+        </div>
+        <div className="top-bar-actions map-toolbar-dock" aria-label="Map category filter">
+          <div className="controls-row controls-row-top">
+            <p className="top-category-text" aria-label="Current map category">
+              {activeMapConfig.mapTitle}
+            </p>
           </div>
         </div>
-        <div className="top-bar-actions map-toolbar-dock" aria-label="Map tools">
-          <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
-            Back to Maps
-          </button>
-          <div className="controls-row controls-row-top">
+      </header>
+      <div className="mobile-filter-menu-row">
+        <button
+          type="button"
+          className={`mobile-filter-menu-btn secondary${mobileFilterMenuOpen ? ' is-open' : ''}`}
+          aria-label={mobileFilterMenuOpen ? 'Close map filters' : 'Open map filters'}
+          aria-expanded={mobileFilterMenuOpen}
+          aria-controls="mobile-filter-panel"
+          onClick={() => setMobileFilterMenuOpen((current) => !current)}
+        >
+          {mobileFilterMenuOpen ? (
+            <X size={16} strokeWidth={2.1} aria-hidden="true" />
+          ) : (
+            <SlidersHorizontal size={16} strokeWidth={2.1} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <section
+        className={`mobile-filter-panel${mobileFilterMenuOpen ? ' is-open' : ''}`}
+        id="mobile-filter-panel"
+        aria-label="Map filters"
+        aria-hidden={!mobileFilterMenuOpen}
+      >
+          {activeMapId === 'community-map' ? (
+            <label className="mobile-filter-field">
+              Category
+              <select
+                className="control-input"
+                value={filterCategory}
+                onChange={(event) => setFilterCategory(event.target.value)}
+              >
+                <option value="all">All categories</option>
+                <option value="loos">Loo Finder</option>
+                <option value="restaurants_cafes">Restaurants & Cafe</option>
+                <option value="tambayan_24h">Tambayan 24hrs</option>
+              </select>
+            </label>
+          ) : null}
+          <label className="mobile-filter-field">
+            Rating
             <select
               className="control-input"
               value={filterRating}
@@ -1342,100 +1401,35 @@ function App() {
               <option value="2">2 stars and up</option>
               <option value="1">1 star and up</option>
             </select>
-          </div>
-          <div className="controls-row controls-row-bottom">
-            <div className="map-quick-actions map-quick-actions--inline">
-              <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
-                {isLocating ? (
-                  <span className="locate-loading">
-                    <span className="locate-loading-spinner" aria-hidden="true"></span>
-                    Locating...
-                  </span>
-                ) : (
-                  'Locate Me'
-                )}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
-              >
-                Pin At Center
-              </button>
-            </div>
-            <label className="theme-toggle" aria-label="Toggle light or dark mode">
-              <input
-                type="checkbox"
-                checked={theme === 'dark'}
-                onChange={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-              />
-              <span className="toggle-track">
-                <span className="toggle-track-icons" aria-hidden>
-                  <span className="toggle-icon toggle-icon-sun">
-                    <Sun size={14} strokeWidth={2} />
-                  </span>
-                  <span className="toggle-icon toggle-icon-moon">
-                    <Moon size={14} strokeWidth={2} />
-                  </span>
-                </span>
-                <span className="toggle-thumb">
-                  <span className="toggle-thumb-icon toggle-thumb-sun">
-                    <Sun size={14} strokeWidth={2.25} />
-                  </span>
-                  <span className="toggle-thumb-icon toggle-thumb-moon">
-                    <Moon size={14} strokeWidth={2.25} />
-                  </span>
-                </span>
+          </label>
+      </section>
+
+      </div>
+
+      {!isMarkerPopupOpen ? (
+        <div className="map-quick-actions map-quick-actions--floating" aria-label="Map position tools">
+          <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
+            Home
+          </button>
+          <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
+            {isLocating ? (
+              <span className="locate-loading">
+                <span className="locate-loading-spinner" aria-hidden="true"></span>
+                Locating...
               </span>
-            </label>
-            {currentUser ? (
-              <>
-                {isAdmin ? <span className="admin-pill">Admin</span> : null}
-                <button type="button" className="secondary" onClick={handleLogout}>
-                  Logout
-                </button>
-              </>
             ) : (
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  setShowAuthModal(true)
-                  setAuthMode('login')
-                  setAuthError('')
-                }}
-              >
-                Login
-              </button>
+              'Locate Me'
             )}
-          </div>
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
+          >
+            Pin At Center
+          </button>
         </div>
-      </header>
-
-      </div>
-
-      <div className="map-quick-actions map-quick-actions--floating" aria-label="Map position tools">
-        <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
-          Home
-        </button>
-        <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
-          {isLocating ? (
-            <span className="locate-loading">
-              <span className="locate-loading-spinner" aria-hidden="true"></span>
-              Locating...
-            </span>
-          ) : (
-            'Locate Me'
-          )}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
-        >
-          Pin At Center
-        </button>
-      </div>
+      ) : null}
       {!selectedLocation && !showAuthModal ? (
         <div className="map-notice-stack" aria-live="polite" aria-atomic="true">
           {error ? <p className="map-notice map-notice--error">{error}</p> : null}
@@ -1453,7 +1447,7 @@ function App() {
         <MapContainer
           center={mapCenter}
           zoom={14}
-          minZoom={12}
+          minZoom={isMobileViewport ? 13 : 12}
           className="map"
           tap={false}
           scrollWheelZoom={false}
@@ -1483,8 +1477,17 @@ function App() {
               key={pinBusyKey(pin)}
               position={[pin.latitude, pin.longitude]}
               icon={markerIconForPin(pin, pinMarkerIcon)}
+              eventHandlers={{
+                popupopen: () => setIsMarkerPopupOpen(true),
+                popupclose: () => setIsMarkerPopupOpen(false),
+              }}
             >
-              <Popup maxWidth={280}>
+              <Popup
+                maxWidth={isMobileViewport ? 280 : 360}
+                autoPan
+                autoPanPaddingTopLeft={[16, isMobileViewport ? 190 : 110]}
+                autoPanPaddingBottomRight={[16, isMobileViewport ? 240 : 110]}
+              >
                 <article className="popup-content">
                   {pin.collection ? (
                     <p className="hint" style={{ marginBottom: '0.35rem' }}>
@@ -1568,21 +1571,23 @@ function App() {
                       </button>
                     </div>
                   ) : null}
-                  <button
-                    type="button"
-                    className="route-btn"
-                    onClick={() => getBestRouteToPin(pin)}
-                    disabled={routingForPinId === pinBusyKey(pin)}
-                  >
-                    {routingForPinId === pinBusyKey(pin) ? 'Routing...' : 'Get Directions'}
-                  </button>
-                  <button
-                    type="button"
-                    className="route-btn secondary-btn"
-                    onClick={() => openEditPinForm(pin)}
-                  >
-                    Update Pin
-                  </button>
+                  <div className="popup-main-actions">
+                    <button
+                      type="button"
+                      className="route-btn"
+                      onClick={() => getBestRouteToPin(pin)}
+                      disabled={routingForPinId === pinBusyKey(pin)}
+                    >
+                      {routingForPinId === pinBusyKey(pin) ? 'Routing...' : 'Get Directions'}
+                    </button>
+                    <button
+                      type="button"
+                      className="route-btn secondary-btn"
+                      onClick={() => openEditPinForm(pin)}
+                    >
+                      Update Pin
+                    </button>
+                  </div>
                 </article>
               </Popup>
             </Marker>
