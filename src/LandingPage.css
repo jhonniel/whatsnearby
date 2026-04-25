@@ -71,6 +71,35 @@
   background: var(--saas-nav-bg);
   border-bottom: 1px solid var(--saas-border);
   backdrop-filter: blur(12px);
+  min-height: 1in;
+  box-sizing: border-box;
+}
+
+/* Desktop/web: center the logo block in the navbar */
+@media (min-width: 641px) {
+  .saas-nav {
+    display: grid;
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    align-items: center;
+    gap: 2in;
+  }
+
+  .saas-nav-brand {
+    justify-self: center;
+  }
+
+  .saas-nav-links {
+    justify-self: center;
+    flex: 0 0 auto;
+    justify-content: center;
+  }
+
+  .saas-nav-actions {
+    justify-self: center;
+    flex: 0 0 auto;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 640px) {
@@ -183,7 +212,7 @@
 }
 
 .saas-nav-links a {
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--saas-muted);
   text-decoration: none;
@@ -259,25 +288,26 @@
   border-bottom: 1px solid var(--saas-border);
 }
 
-/* Map texture fills the entire hero (see public/landing-hero-map-bg.png) */
+/* Map texture fills the entire hero (see public/map-system-bg.png) */
 .saas-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/landing-hero-map-bg.png');
+  background-image: url('/map-system-bg.png?v=2');
   background-repeat: no-repeat;
   background-position: center center;
   background-size: cover;
-  opacity: 0.28;
-  mix-blend-mode: multiply;
+  opacity: 0.5;
+  mix-blend-mode: normal;
+  filter: saturate(1.08) contrast(1.02);
   pointer-events: none;
   z-index: 0;
 }
 
 .saas-shell--dark .saas-hero::before {
-  opacity: 0.14;
-  mix-blend-mode: soft-light;
-  filter: brightness(1.15);
+  opacity: 0.3;
+  mix-blend-mode: screen;
+  filter: brightness(1.12) contrast(1.06);
 }
 
 .saas-hero-inner {
@@ -1044,6 +1074,20 @@
   gap: 0.35rem;
 }
 
+.saas-footer-social-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--saas-muted);
+}
+
+.saas-footer-social-icon svg {
+  display: block;
+}
+
 .saas-footer-social-link {
   display: inline-flex;
   align-items: center;
@@ -1065,7 +1109,15 @@
   color: var(--saas-accent-hover);
 }
 
+.saas-footer-social-link:hover .saas-footer-social-icon {
+  color: var(--saas-accent-hover);
+}
+
 .saas-shell--dark .saas-footer-social-link:hover {
+  color: var(--saas-accent);
+}
+
+.saas-shell--dark .saas-footer-social-link:hover .saas-footer-social-icon {
   color: var(--saas-accent);
 }
 

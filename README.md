@@ -1,6 +1,6 @@
 # whatsnearby
 
-whatsnearby is a React + Firebase web app for discovering, pinning, and navigating to public toilet locations on an interactive map.
+whatsnearby is a React + Firebase web app for discovering, pinning, and navigating to nearby community locations on interactive maps.
 
 It includes a professional landing experience, map category tiles, mobile-responsive UI, authentication for secure pin updates, and community-focused map data.
 
@@ -14,10 +14,14 @@ It includes a professional landing experience, map category tiles, mobile-respon
   - `/` for landing
   - `/loo-finder-map` when map is opened
 - Map experience:
+  - full-viewport map canvas with floating UI chrome
+  - desktop controls in top chrome + mobile docked controls near the bottom
   - current user location marker
   - click map / pin-at-center flow for adding locations
   - anchored smart popup form (auto-positioned to stay visible)
   - mobile-responsive bottom-sheet form behavior
+  - center-screen branded loading overlay while map pins are fetched
+  - bottom toast-style notices for errors/warnings/route info (instead of top bars)
   - dark mode toggle (persisted in local storage)
   - greener light map style + dark map style
 - Pin data capture:
@@ -107,6 +111,8 @@ It includes a professional landing experience, map category tiles, mobile-respon
    ```bash
    npm run dev
    ```
+
+   The Vite server is configured for LAN access, so you can also open the app from another device on the same network (use the `Network` URL printed by Vite).
 
 8. Open:
 

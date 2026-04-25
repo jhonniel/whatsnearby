@@ -17,7 +17,16 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
-import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet'
+import {
+  AttributionControl,
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet'
 import { Bath, Droplets, MirrorRound, Moon, ShowerHead, Sun, Toilet } from 'lucide-react'
 import L from 'leaflet'
 import './App.css'
@@ -259,6 +268,24 @@ function MapEvents({ onMapClick, onCenterChange }) {
     onCenterChange([current.lat, current.lng])
   }, [map, onCenterChange])
 
+  return null
+}
+
+/** Leaflet needs a size refresh when the map pane goes full-viewport or flex layout changes. */
+function MapInvalidateOnResize() {
+  const map = useMap()
+  useEffect(() => {
+    const el = map.getContainer()
+    const invalidate = () => map.invalidateSize({ animate: false })
+    invalidate()
+    const ro = new ResizeObserver(invalidate)
+    ro.observe(el)
+    window.addEventListener('resize', invalidate)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', invalidate)
+    }
+  }, [map])
   return null
 }
 
@@ -1170,33 +1197,54 @@ function App() {
   useEffect(() => {
     if (!selectedLocation || !selectedScreenPos || !mapShellRef.current) return
 
-    const shellRect = mapShellRef.current.getBoundingClientRect()
     const margin = 12
-    const preferredWidth = 500
-    const estimatedModalHeight = 560
+    const preferredWidth = 392
+    const estimatedModalHeight = 480
     const anchorOffset = 24
-    const modalWidth = Math.max(280, Math.min(preferredWidth, shellRect.width - margin * 2))
-    const leftMin = modalWidth / 2 + margin
-    const leftMax = shellRect.width - modalWidth / 2 - margin
-    const left = Math.min(Math.max(selectedScreenPos.x, leftMin), leftMax)
 
-    // Auto-place popup to avoid the navbar and map bounds.
-    const availableAbove = selectedScreenPos.y - margin
-    const availableBelow = shellRect.height - selectedScreenPos.y - margin
-    const placeBelow = availableAbove < estimatedModalHeight && availableBelow > availableAbove
-    const top = placeBelow
-      ? Math.min(selectedScreenPos.y + anchorOffset, shellRect.height - margin)
-      : Math.max(selectedScreenPos.y - anchorOffset, margin)
-    const maxHeight = Math.max(220, (placeBelow ? availableBelow : availableAbove) - 14)
+    function layoutAnchoredModal() {
+      const shell = mapShellRef.current
+      if (!shell || !selectedScreenPos) return
 
-    setShowBelowPin(placeBelow)
-    setAnchoredModalStyle({
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${modalWidth}px`,
-      maxHeight: `${maxHeight}px`,
-      transform: placeBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
-    })
+      const shellRect = shell.getBoundingClientRect()
+      const narrow = typeof window !== 'undefined' && window.innerWidth <= 768
+      const marginX = narrow ? 8 : margin
+      const appShell = shell.closest('main.app-shell')
+      const footerEl = appShell?.querySelector('.map-footer-layer')
+      const footerReserve =
+        footerEl && typeof footerEl.getBoundingClientRect === 'function'
+          ? footerEl.getBoundingClientRect().height + 10
+          : 52
+      const modalWidth = Math.max(280, Math.min(preferredWidth, shellRect.width - marginX * 2))
+      const leftMin = modalWidth / 2 + marginX
+      const leftMax = shellRect.width - modalWidth / 2 - marginX
+      const left = Math.min(Math.max(selectedScreenPos.x, leftMin), leftMax)
+
+      const availableAbove = selectedScreenPos.y - margin
+      const availableBelow = shellRect.height - selectedScreenPos.y - margin - footerReserve
+      const placeBelow = availableAbove < estimatedModalHeight && availableBelow > availableAbove
+      const top = placeBelow
+        ? Math.min(selectedScreenPos.y + anchorOffset, shellRect.height - margin - footerReserve)
+        : Math.max(selectedScreenPos.y - anchorOffset, margin)
+      const maxHeight = Math.max(220, (placeBelow ? availableBelow : availableAbove) - 14)
+
+      setShowBelowPin(placeBelow)
+      setAnchoredModalStyle({
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${modalWidth}px`,
+        maxHeight: `${maxHeight}px`,
+        transform: placeBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+      })
+    }
+
+    layoutAnchoredModal()
+    window.addEventListener('resize', layoutAnchoredModal)
+    window.addEventListener('orientationchange', layoutAnchoredModal)
+    return () => {
+      window.removeEventListener('resize', layoutAnchoredModal)
+      window.removeEventListener('orientationchange', layoutAnchoredModal)
+    }
   }, [selectedLocation, selectedScreenPos])
 
   if (!activeMapId) {
@@ -1212,6 +1260,7 @@ function App() {
 
   return (
     <main className={`app-shell ${theme === 'dark' ? 'dark' : ''}`}>
+      <div className="map-chrome-layer">
       <header className="top-bar">
         <div className="brand-block">
           <img
@@ -1227,7 +1276,7 @@ function App() {
             <p>{activeMapConfig.tagline || 'Click map to pin, then fill the popup form.'}</p>
           </div>
         </div>
-        <div className="top-bar-actions">
+        <div className="top-bar-actions map-toolbar-dock" aria-label="Map tools">
           <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
             Back to Maps
           </button>
@@ -1246,16 +1295,18 @@ function App() {
             </select>
           </div>
           <div className="controls-row controls-row-bottom">
-            <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
-              {isLocating ? 'Locating...' : 'Locate Me'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
-            >
-              Pin At Center
-            </button>
+            <div className="map-quick-actions map-quick-actions--inline">
+              <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
+                {isLocating ? 'Locating...' : 'Locate Me'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
+              >
+                Pin At Center
+              </button>
+            </div>
             <label className="theme-toggle" aria-label="Toggle light or dark mode">
               <input
                 type="checkbox"
@@ -1305,18 +1356,51 @@ function App() {
         </div>
       </header>
 
-      {error ? <p className="status error">{error}</p> : null}
-      {notice ? <p className="status warning">{notice}</p> : null}
-      {loadingPins ? <p className="status">Loading pins...</p> : null}
+      </div>
+
+      <div className="map-quick-actions map-quick-actions--floating" aria-label="Map position tools">
+        <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
+          Home
+        </button>
+        <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
+          {isLocating ? 'Locating...' : 'Locate Me'}
+        </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
+        >
+          Pin At Center
+        </button>
+      </div>
+      <div className="map-notice-stack" aria-live="polite" aria-atomic="true">
+        {error ? <p className="map-notice map-notice--error">{error}</p> : null}
+        {notice ? <p className="map-notice map-notice--warning">{notice}</p> : null}
+        {routeSummary ? (
+          <p className="map-notice map-notice--info">
+            Route to <strong>{routeSummary.destinationName}</strong>: {routeSummary.distanceKm} km, about{' '}
+            {routeSummary.durationMin} min.
+          </p>
+        ) : null}
+      </div>
 
       <section className="map-shell" ref={mapShellRef}>
-        <MapContainer center={mapCenter} zoom={14} className="map" tap={false}>
+        <MapContainer
+          center={mapCenter}
+          zoom={14}
+          className="map"
+          tap={false}
+          zoomControl={false}
+          attributionControl={false}
+        >
+          <MapInvalidateOnResize />
           <LocateMap center={mapCenter} zoom={14} />
           <MapEvents onMapClick={openPinForm} onCenterChange={setVisibleCenter} />
           <SelectedPinOverlayTracker
             selectedLocation={selectedLocation}
             onPositionChange={setSelectedScreenPos}
           />
+          <AttributionControl position="bottomleft" prefix={false} />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             url={
@@ -1464,6 +1548,21 @@ function App() {
             />
           ) : null}
         </MapContainer>
+        {loadingPins ? (
+          <div className="map-loading-overlay" role="status" aria-live="polite">
+            <div className="map-loading-card">
+              <div className="map-loading-emblem" aria-hidden="true">
+                <span className="map-loading-ripple map-loading-ripple--one"></span>
+                <span className="map-loading-ripple map-loading-ripple--two"></span>
+                <span className="map-loading-pin map-loading-pin--left">📍</span>
+                <span className="map-loading-pin map-loading-pin--center">📍</span>
+                <span className="map-loading-pin map-loading-pin--right">📍</span>
+              </div>
+              <p className="map-loading-title">Loading pins</p>
+              <p className="map-loading-subtitle">Fetching nearby community pins...</p>
+            </div>
+          </div>
+        ) : null}
 
         {selectedLocation && selectedScreenPos ? (
           <form
@@ -1627,12 +1726,11 @@ function App() {
           </form>
         ) : null}
       </section>
-      {routeSummary ? (
-        <p className="status route-summary">
-          Route to <strong>{routeSummary.destinationName}</strong>: {routeSummary.distanceKm} km, about{' '}
-          {routeSummary.durationMin} min.
-        </p>
-      ) : null}
+      <footer className="map-footer-layer" role="contentinfo" aria-label="Site footer">
+        <small className="map-footer-copy">
+          © {new Date().getFullYear()} whatsnearby — community maps for everyday needs.
+        </small>
+      </footer>
       {showAuthModal ? (
         <section className="auth-backdrop">
           <form className="auth-modal" onSubmit={submitAuth}>
