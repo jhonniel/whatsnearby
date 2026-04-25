@@ -12,6 +12,7 @@
     "rebuild:favicon": "node scripts/rebuild-favicon.mjs"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
     "firebase": "^12.12.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.11.0",
