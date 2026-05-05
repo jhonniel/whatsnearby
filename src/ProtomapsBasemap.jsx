@@ -29,21 +29,15 @@ export function ProtomapsBasemap({
     }
   }, [map, theme])
 
-  if (!PROTOMAPS_TILES_URL) {
-    const baseNoIconsUrl =
-      theme === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png'
-    const labelsOnlyUrl =
-      theme === 'dark'
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png'
-    return (
-      <>
-        <TileLayer attribution={fallbackAttribution} url={baseNoIconsUrl} />
-        <TileLayer url={labelsOnlyUrl} pane="overlayPane" />
-      </>
-    )
-  }
-  return null
+  const fallbackBaseUrl =
+    theme === 'dark'
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+
+  // Always render raster fallback under Protomaps so map never becomes blank.
+  return (
+    <>
+      <TileLayer attribution={fallbackAttribution} url={fallbackBaseUrl} />
+    </>
+  )
 }

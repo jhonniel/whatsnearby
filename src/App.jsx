@@ -79,9 +79,9 @@ const tambayanIcon = L.divIcon({
 
 const userIcon = L.icon({
   iconUrl: '/user-location-pin.png',
-  iconSize: [46, 62],
-  iconAnchor: [23, 62],
-  popupAnchor: [0, -56],
+  iconSize: [52, 52],
+  iconAnchor: [26, 52],
+  popupAnchor: [0, -46],
 })
 
 function BidetAmenityIcon({ size = 18 }) {
@@ -2247,7 +2247,7 @@ out tags qt 40;
           ))}
 
           {userLocation ? (
-            <Marker position={userLocation} icon={userIcon}>
+            <Marker position={userLocation} icon={userIcon} zIndexOffset={10000}>
               <Popup>You are here</Popup>
             </Marker>
           ) : null}

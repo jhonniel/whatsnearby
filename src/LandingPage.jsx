@@ -73,9 +73,9 @@ const previewTambayanIcon = L.divIcon({
 
 const previewUserIcon = L.icon({
   iconUrl: '/user-location-pin.png',
-  iconSize: [46, 62],
-  iconAnchor: [23, 62],
-  popupAnchor: [0, -56],
+  iconSize: [52, 52],
+  iconAnchor: [26, 52],
+  popupAnchor: [0, -46],
 })
 
 function previewIconForCollection(collection) {
@@ -531,7 +531,7 @@ function LandingMapPreview({ location, theme, pins = [] }) {
         </Marker>
       ))}
       {location ? (
-        <Marker position={location} icon={previewUserIcon}>
+        <Marker position={location} icon={previewUserIcon} zIndexOffset={10000}>
           <Tooltip direction="top" opacity={0.92}>
             Your location
           </Tooltip>
