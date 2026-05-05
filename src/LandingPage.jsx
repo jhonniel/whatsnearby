@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore'
 import L from 'leaflet'
-import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, Marker, Tooltip, useMap } from 'react-leaflet'
 import {
   ArrowRight,
   Beer,
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import './LandingPage.css'
 import { db, hasFirebaseConfig } from './firebase'
+import { ProtomapsBasemap } from './ProtomapsBasemap'
 
 /** Firestore collections used by live maps (same as App MAP_REGISTRY). */
 const PREVIEW_PIN_COLLECTIONS = ['loos', 'restaurants_cafes', 'tambayan_24h']
@@ -509,12 +510,8 @@ function LandingMapPreview({ location, theme, pins = [] }) {
     >
       <InvalidatePreviewSize />
       <PreviewFollowUser center={location} zoom={13} />
-      <TileLayer
-        url={
-          theme === 'dark'
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-        }
+      <ProtomapsBasemap
+        theme={theme}
       />
       {pins.map((pin) => (
         <Marker

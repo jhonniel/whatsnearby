@@ -24,7 +24,6 @@ import {
   Marker,
   Polyline,
   Popup,
-  TileLayer,
   Tooltip,
   useMap,
   useMapEvents,
@@ -44,6 +43,7 @@ import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
 import { LandingPage } from './LandingPage'
+import { ProtomapsBasemap } from './ProtomapsBasemap'
 import { hasSupabaseConfig, supabase, supabaseBucket } from './supabase'
 
 const EXTRA_ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || '')
@@ -304,6 +304,24 @@ function mapLayerLabel(collection) {
   return 'Map pin'
 }
 
+function formatHourLabel(value) {
+  const raw = String(value || '').trim()
+  const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+  if (!match) return raw
+  const hour = Number(match[1])
+  const minute = match[2]
+  const period = hour >= 12 ? 'PM' : 'AM'
+  const twelveHour = hour % 12 || 12
+  return `${twelveHour}:${minute} ${period}`
+}
+
+function normalizeSocialUrl(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  return `https://${raw}`
+}
+
 /** Treat existing `rating` as one vote when ratingCount / ratingSum are missing. */
 function ratingStatsFromDocData(data) {
   const raw = Number(data?.rating)
@@ -515,6 +533,10 @@ function App() {
     rating: '',
     price: '',
     isFree: false,
+    openingHours: '',
+    closingHours: '',
+    facebookUrl: '',
+    instagramUrl: '',
     details: '',
     images: [],
     bidet: false,
@@ -767,6 +789,18 @@ function App() {
       }),
     [formMode, activeMapId, newPinCategory, editingPinCollection],
   )
+  const shouldShowRestaurantFields = useMemo(() => {
+    if (activeMapId === 'restaurants-cafe') return true
+    if (activeMapId !== 'community-map') return false
+    if (formMode === 'edit') return editingPinCollection === 'restaurants_cafes'
+    return newPinCategory === 'restaurants_cafes'
+  }, [activeMapId, formMode, editingPinCollection, newPinCategory])
+  const shouldShowPriceFields = useMemo(() => {
+    if (activeMapId === 'loo-finder') return true
+    if (activeMapId !== 'community-map') return false
+    if (formMode === 'edit') return editingPinCollection === 'loos'
+    return newPinCategory === 'loos'
+  }, [activeMapId, formMode, editingPinCollection, newPinCategory])
 
   const editingPinImageUrls = useMemo(() => {
     if (formMode !== 'edit' || !editingPinId) return []
@@ -1147,6 +1181,10 @@ out tags qt 40;
       rating: '',
       price: '',
       isFree: false,
+      openingHours: '',
+      closingHours: '',
+      facebookUrl: '',
+      instagramUrl: '',
       details: '',
       images: [],
       bidet: false,
@@ -1214,6 +1252,10 @@ out tags qt 40;
       rating: pin.rating ? String(pin.rating) : '',
       price: pin.price != null ? String(pin.price) : '',
       isFree: Boolean(pin.isFree),
+      openingHours: pin.openingHours || '',
+      closingHours: pin.closingHours || '',
+      facebookUrl: pin.facebookUrl || '',
+      instagramUrl: pin.instagramUrl || '',
       details: pin.details || '',
       images: [],
       bidet: Boolean(pin.bidet),
@@ -1453,9 +1495,37 @@ out tags qt 40;
       return
     }
     const numericPrice = Number(form.price)
-    if (!form.isFree && (!form.price || Number.isNaN(numericPrice) || numericPrice < 0)) {
+    if (
+      shouldShowPriceFields &&
+      !form.isFree &&
+      (!form.price || Number.isNaN(numericPrice) || numericPrice < 0)
+    ) {
       setFormError('Please provide a valid price or mark it as free.')
       return
+    }
+    if (shouldShowRestaurantFields && form.facebookUrl.trim()) {
+      try {
+        const socialUrl = new URL(normalizeSocialUrl(form.facebookUrl))
+        if (!socialUrl.hostname.toLowerCase().includes('facebook.com')) {
+          setFormError('Please enter a valid Facebook link.')
+          return
+        }
+      } catch {
+        setFormError('Please enter a valid Facebook link.')
+        return
+      }
+    }
+    if (shouldShowRestaurantFields && form.instagramUrl.trim()) {
+      try {
+        const socialUrl = new URL(normalizeSocialUrl(form.instagramUrl))
+        if (!socialUrl.hostname.toLowerCase().includes('instagram.com')) {
+          setFormError('Please enter a valid Instagram link.')
+          return
+        }
+      } catch {
+        setFormError('Please enter a valid Instagram link.')
+        return
+      }
     }
 
     if (formMode !== 'edit' && activeMapId === 'community-map') {
@@ -1495,8 +1565,12 @@ out tags qt 40;
       longitude: selectedLocation.lng,
       nearbyLandmarks: form.nearbyLandmarks.trim(),
       rating: numericRating,
-      price: form.isFree ? 0 : numericPrice,
-      isFree: form.isFree,
+      price: shouldShowPriceFields ? (form.isFree ? 0 : numericPrice) : 0,
+      isFree: shouldShowPriceFields ? form.isFree : true,
+      openingHours: shouldShowRestaurantFields ? form.openingHours.trim() : '',
+      closingHours: shouldShowRestaurantFields ? form.closingHours.trim() : '',
+      facebookUrl: shouldShowRestaurantFields ? normalizeSocialUrl(form.facebookUrl) : '',
+      instagramUrl: shouldShowRestaurantFields ? normalizeSocialUrl(form.instagramUrl) : '',
       imageUrls: [],
       details: form.details.trim(),
       localOnly: true,
@@ -1572,6 +1646,10 @@ out tags qt 40;
             rating: optimisticPin.rating,
             price: optimisticPin.price,
             isFree: optimisticPin.isFree,
+            openingHours: optimisticPin.openingHours,
+            closingHours: optimisticPin.closingHours,
+            facebookUrl: optimisticPin.facebookUrl,
+            instagramUrl: optimisticPin.instagramUrl,
             details: optimisticPin.details,
             imageUrls: nextImageUrls,
             latitude: selectedLocation.lat,
@@ -1593,6 +1671,10 @@ out tags qt 40;
                   rating: optimisticPin.rating,
                   price: optimisticPin.price,
                   isFree: optimisticPin.isFree,
+                  openingHours: optimisticPin.openingHours,
+                  closingHours: optimisticPin.closingHours,
+                  facebookUrl: optimisticPin.facebookUrl,
+                  instagramUrl: optimisticPin.instagramUrl,
                   details: optimisticPin.details,
                   imageUrls: nextImageUrls,
                   latitude: selectedLocation.lat,
@@ -1962,7 +2044,8 @@ out tags qt 40;
         <MapContainer
           center={mapCenter}
           zoom={14}
-          minZoom={isMobileViewport ? 13 : 12}
+          minZoom={isMobileViewport ? 14 : 12}
+          maxZoom={isMobileViewport ? 17 : 19}
           className="map"
           tap={false}
           scrollWheelZoom={!isMobileViewport}
@@ -1978,13 +2061,9 @@ out tags qt 40;
             onPositionChange={setSelectedScreenPos}
           />
           <AttributionControl position="bottomleft" prefix={false} />
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url={
-              theme === 'dark'
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-            }
+          <ProtomapsBasemap
+            theme={theme}
+            fallbackAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
 
           {visiblePins.map((pin) => (
@@ -2071,6 +2150,34 @@ out tags qt 40;
                   ) : null}
                   <p className="popup-field-label">Details</p>
                   <p>{pin.details || 'No additional details.'}</p>
+                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'restaurants_cafes' ? (
+                    <>
+                      <p className="popup-field-label">Operating Hours</p>
+                      <p>
+                        {pin.openingHours || pin.closingHours
+                          ? `${formatHourLabel(pin.openingHours || '--:--')} - ${formatHourLabel(pin.closingHours || '--:--')}`
+                          : 'Not provided'}
+                      </p>
+                      {pin.facebookUrl || pin.instagramUrl ? (
+                        <>
+                          <p className="popup-field-label">Social Media</p>
+                          <p>
+                            {pin.facebookUrl ? (
+                              <a href={pin.facebookUrl} target="_blank" rel="noopener noreferrer">
+                                Facebook
+                              </a>
+                            ) : null}
+                            {pin.facebookUrl && pin.instagramUrl ? ' • ' : null}
+                            {pin.instagramUrl ? (
+                              <a href={pin.instagramUrl} target="_blank" rel="noopener noreferrer">
+                                Instagram
+                              </a>
+                            ) : null}
+                          </p>
+                        </>
+                      ) : null}
+                    </>
+                  ) : null}
                   {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' &&
                   LOO_AMENITY_FIELDS.some(({ key }) => pin[key]) ? (
                     <div className="loo-amenity-icons-row" role="list" aria-label="Amenities">
@@ -2082,9 +2189,11 @@ out tags qt 40;
                       ))}
                     </div>
                   ) : null}
-                  <p className="price-info">
-                    {pin.isFree ? 'Free' : `Price: ₱${Number(pin.price || 0).toFixed(2)}`}
-                  </p>
+                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' ? (
+                    <p className="price-info">
+                      {pin.isFree ? 'Free' : `Price: ₱${Number(pin.price || 0).toFixed(2)}`}
+                    </p>
+                  ) : null}
                   {pin.verified ? (
                     <p className="verified-line">Verified listing</p>
                   ) : (
@@ -2270,37 +2379,87 @@ out tags qt 40;
               </div>
             </div>
 
-            <div className="price-with-free-field">
-              <span className="price-with-free-label">Price</span>
-              <div className="price-with-free-row">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, price: event.target.value }))
-                  }
-                  placeholder={form.isFree ? '0.00' : 'Enter price'}
-                  disabled={form.isFree}
-                  aria-label="Price in pesos"
-                />
-                <label className="checkbox-field price-free-checkbox">
+            {shouldShowPriceFields ? (
+              <div className="price-with-free-field">
+                <span className="price-with-free-label">Price</span>
+                <div className="price-with-free-row">
                   <input
-                    type="checkbox"
-                    checked={form.isFree}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.price}
                     onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        isFree: event.target.checked,
-                        price: event.target.checked ? '0' : current.price,
-                      }))
+                      setForm((current) => ({ ...current, price: event.target.value }))
+                    }
+                    placeholder={form.isFree ? '0.00' : 'Enter price'}
+                    disabled={form.isFree}
+                    aria-label="Price in pesos"
+                  />
+                  <label className="checkbox-field price-free-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.isFree}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          isFree: event.target.checked,
+                          price: event.target.checked ? '0' : current.price,
+                        }))
+                      }
+                    />
+                    <span>Free</span>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {shouldShowRestaurantFields ? (
+              <>
+                <div className="price-with-free-field">
+                  <span className="price-with-free-label">Operating Hours</span>
+                  <div className="price-with-free-row">
+                    <input
+                      type="time"
+                      value={form.openingHours}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, openingHours: event.target.value }))
+                      }
+                      aria-label="Opening time"
+                    />
+                    <input
+                      type="time"
+                      value={form.closingHours}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, closingHours: event.target.value }))
+                      }
+                      aria-label="Closing time"
+                    />
+                  </div>
+                </div>
+                <label>
+                  Facebook Link
+                  <input
+                    type="url"
+                    placeholder="https://facebook.com/your-page"
+                    value={form.facebookUrl}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, facebookUrl: event.target.value }))
                     }
                   />
-                  <span>Free</span>
                 </label>
-              </div>
-            </div>
+                <label>
+                  Instagram Link
+                  <input
+                    type="url"
+                    placeholder="https://instagram.com/your-page"
+                    value={form.instagramUrl}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, instagramUrl: event.target.value }))
+                    }
+                  />
+                </label>
+              </>
+            ) : null}
 
             {showLooAmenitiesFieldset ? (
               <fieldset className="pin-category-fieldset loo-amenities-fieldset">
