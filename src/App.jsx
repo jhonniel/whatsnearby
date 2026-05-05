@@ -168,6 +168,7 @@ const GEOLOCATION_RETRY_OPTIONS = {
 const IMAGE_MAX_DIMENSION = 1600
 const IMAGE_UPLOAD_QUALITY = 0.72
 const MAX_PIN_IMAGES = 5
+const PROTOMAPS_MAX_ZOOM = 15
 
 function safeImageBaseName(name) {
   return String(name || 'image')
@@ -509,6 +510,7 @@ function App() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('whatsnearby-theme') || localStorage.getItem('loo-theme') || 'light',
   )
+  const hasProtomapsKey = Boolean(String(import.meta.env.VITE_PROTOMAPS_API_KEY || '').trim())
   const [routeCoords, setRouteCoords] = useState([])
   const [routeSummary, setRouteSummary] = useState(null)
   const [routingForPinId, setRoutingForPinId] = useState(null)
@@ -2045,7 +2047,7 @@ out tags qt 40;
           center={mapCenter}
           zoom={14}
           minZoom={isMobileViewport ? 14 : 12}
-          maxZoom={isMobileViewport ? 17 : 19}
+          maxZoom={hasProtomapsKey ? PROTOMAPS_MAX_ZOOM : isMobileViewport ? 17 : 19}
           className="map"
           tap={false}
           scrollWheelZoom={!isMobileViewport}
