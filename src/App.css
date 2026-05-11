@@ -1692,6 +1692,33 @@ button:disabled {
     0 20px 48px -12px rgba(0, 0, 0, 0.45);
 }
 
+/* Price / hours / amenities block: re-animates when “Which topic map?” (or edit collection) changes */
+.pin-form-topic-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-height: 0;
+  animation: pin-form-topic-section-in 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes pin-form-topic-section-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-form-topic-section {
+    animation: none;
+  }
+}
+
 .anchored-modal .coordinates {
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
@@ -2284,9 +2311,22 @@ button:disabled {
     padding-right: max(0.45rem, env(safe-area-inset-right, 0px));
     gap: 0.4rem;
     max-height: min(46dvh, calc(100dvh - env(safe-area-inset-bottom, 0px) - 2.5rem));
+    transition:
+      opacity 320ms cubic-bezier(0.32, 0.72, 0, 1),
+      transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Add / edit pin: slide/fade chrome away (animated). pointer-events off so map receives touches. */
+  .app-shell.app-shell--pinning-mobile .map-chrome-layer {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-14px);
   }
 
   .map-footer-layer {
+    transition:
+      opacity 300ms cubic-bezier(0.32, 0.72, 0, 1),
+      transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
     padding-top: 0.45rem;
     padding-left: max(0.55rem, env(safe-area-inset-left, 0px));
     padding-right: max(0.55rem, env(safe-area-inset-right, 0px));
@@ -2295,6 +2335,12 @@ button:disabled {
 
   .map-footer-copy {
     font-size: 0.7rem;
+  }
+
+  .app-shell.app-shell--pinning-mobile .map-footer-layer {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
   }
 
   .top-bar {
@@ -2467,9 +2513,9 @@ button:disabled {
     max-width: calc(100vw - 0.85rem);
     box-sizing: border-box;
     transition:
-      opacity 0.2s ease,
-      transform 0.22s ease,
-      visibility 0.22s ease;
+      opacity 320ms cubic-bezier(0.32, 0.72, 0, 1),
+      transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+      visibility 320ms cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   .map-quick-actions--floating button.secondary {
@@ -2501,7 +2547,15 @@ button:disabled {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transform: translate(-50%, 120%);
+    transform: translate(-50%, calc(100% + 0.85rem)) scale(0.96);
+  }
+
+  /* Hide as soon as pin flow starts (before modal), same motion as anchored-modal */
+  .app-shell.app-shell--pinning-mobile .map-quick-actions--floating {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translate(-50%, calc(100% + 0.85rem)) scale(0.96);
   }
 
   .mobile-filter-menu-btn:hover:not(:disabled) {
@@ -2929,6 +2983,14 @@ button:disabled {
     min-height: 36px;
     font-size: 0.76rem;
     padding: 0.38rem 0.7rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .map-chrome-layer,
+    .map-footer-layer,
+    .map-quick-actions--floating {
+      transition-duration: 0.01ms !important;
+    }
   }
 
   .auth-actions {

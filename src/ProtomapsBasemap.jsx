@@ -9,6 +9,10 @@ const PROTOMAPS_TILES_URL = PROTOMAPS_KEY
 const PROTOMAPS_ATTRIBUTION =
   '&copy; <a href="https://protomaps.com">Protomaps</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 
+/** Match main map max zoom; Carto tiles native ~19, allow Leaflet to overzoom slightly. */
+const RASTER_MAX_ZOOM = 22
+const RASTER_MAX_NATIVE_ZOOM = 19
+
 export function ProtomapsBasemap({
   theme = 'light',
   fallbackAttribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -20,6 +24,8 @@ export function ProtomapsBasemap({
       url: PROTOMAPS_TILES_URL,
       flavor: theme === 'dark' ? 'dark' : 'light',
       lang: 'en',
+      maxZoom: RASTER_MAX_ZOOM,
+      maxNativeZoom: 15,
     })
     layer.addTo(map)
     map.attributionControl?.addAttribution(PROTOMAPS_ATTRIBUTION)
@@ -37,7 +43,12 @@ export function ProtomapsBasemap({
   // Always render raster fallback under Protomaps so map never becomes blank.
   return (
     <>
-      <TileLayer attribution={fallbackAttribution} url={fallbackBaseUrl} />
+      <TileLayer
+        attribution={fallbackAttribution}
+        url={fallbackBaseUrl}
+        maxZoom={RASTER_MAX_ZOOM}
+        maxNativeZoom={RASTER_MAX_NATIVE_ZOOM}
+      />
     </>
   )
 }

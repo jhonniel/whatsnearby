@@ -162,7 +162,8 @@ const GEOLOCATION_RETRY_OPTIONS = {
   timeout: 120_000,
 }
 
-const PROTOMAPS_MAX_ZOOM = 15
+/** Max zoom for pinch and +/- (same on mobile WebView and desktop). Raster/vector layers overzoom past native tile zoom. */
+const MAP_MAX_ZOOM = 19
 
 function mapIdToPath(mapId) {
   return MAP_REGISTRY[mapId]?.path ?? '/'
@@ -413,7 +414,6 @@ function App() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('whatsnearby-theme') || localStorage.getItem('loo-theme') || 'light',
   )
-  const hasProtomapsKey = Boolean(String(import.meta.env.VITE_PROTOMAPS_API_KEY || '').trim())
   const [routeCoords, setRouteCoords] = useState([])
   const [routeSummary, setRouteSummary] = useState(null)
   const [routingForPinId, setRoutingForPinId] = useState(null)
@@ -977,7 +977,6 @@ out tags qt 40;
             .join(', ')
         setForm((current) => ({
           ...current,
-          name: current.name || autoName,
           nearbyLandmarks: current.nearbyLandmarks || nearbyLandmarksText,
         }))
       }
@@ -1678,8 +1677,14 @@ out tags qt 40;
     )
   }
 
+  const pinningOnMobile = Boolean(isMobileViewport && selectedLocation)
+
   return (
-    <main className={`app-shell ${theme === 'dark' ? 'dark' : ''}`}>
+    <main
+      className={`app-shell ${theme === 'dark' ? 'dark' : ''}${
+        pinningOnMobile ? ' app-shell--pinning-mobile' : ''
+      }`}
+    >
       <div className="map-chrome-layer">
       <header className="top-bar">
         <div className="brand-block">
@@ -1825,11 +1830,13 @@ out tags qt 40;
         <MapContainer
           center={mapCenter}
           zoom={14}
-          minZoom={isMobileViewport ? 14 : 12}
-          maxZoom={hasProtomapsKey ? PROTOMAPS_MAX_ZOOM : isMobileViewport ? 17 : 19}
+          minZoom={12}
+          maxZoom={MAP_MAX_ZOOM}
           className="map"
           tap={false}
           scrollWheelZoom={!isMobileViewport}
+          touchZoom
+          bounceAtZoomLimits={false}
           zoomControl={false}
           attributionControl={false}
         >
@@ -2160,106 +2167,117 @@ out tags qt 40;
               </div>
             </div>
 
-            {shouldShowPriceFields ? (
-              <div className="price-with-free-field">
-                <span className="price-with-free-label">Price</span>
-                <div className="price-with-free-row">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.price}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, price: event.target.value }))
-                    }
-                    placeholder={form.isFree ? '0.00' : 'Enter price'}
-                    disabled={form.isFree}
-                    aria-label="Price in pesos"
-                  />
-                  <label className="checkbox-field price-free-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={form.isFree}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          isFree: event.target.checked,
-                          price: event.target.checked ? '0' : current.price,
-                        }))
-                      }
-                    />
-                    <span>Free</span>
-                  </label>
-                </div>
-              </div>
-            ) : null}
-
-            {shouldShowRestaurantFields ? (
-              <>
+            <div
+              key={
+                activeMapId === 'community-map' && formMode === 'create'
+                  ? `pin-topic-${newPinCategory || 'none'}`
+                  : formMode === 'edit'
+                    ? `pin-edit-${editingPinCollection ?? 'pin'}`
+                    : `pin-map-${activeMapId}`
+              }
+              className="pin-form-topic-section"
+            >
+              {shouldShowPriceFields ? (
                 <div className="price-with-free-field">
-                  <span className="price-with-free-label">Operating Hours</span>
+                  <span className="price-with-free-label">Price</span>
                   <div className="price-with-free-row">
                     <input
-                      type="time"
-                      value={form.openingHours}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={form.price}
                       onChange={(event) =>
-                        setForm((current) => ({ ...current, openingHours: event.target.value }))
+                        setForm((current) => ({ ...current, price: event.target.value }))
                       }
-                      aria-label="Opening time"
+                      placeholder={form.isFree ? '0.00' : 'Enter price'}
+                      disabled={form.isFree}
+                      aria-label="Price in pesos"
                     />
-                    <input
-                      type="time"
-                      value={form.closingHours}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, closingHours: event.target.value }))
-                      }
-                      aria-label="Closing time"
-                    />
+                    <label className="checkbox-field price-free-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={form.isFree}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            isFree: event.target.checked,
+                            price: event.target.checked ? '0' : current.price,
+                          }))
+                        }
+                      />
+                      <span>Free</span>
+                    </label>
                   </div>
                 </div>
-                <label>
-                  Facebook Link
-                  <input
-                    type="url"
-                    placeholder="https://facebook.com/your-page"
-                    value={form.facebookUrl}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, facebookUrl: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Instagram Link
-                  <input
-                    type="url"
-                    placeholder="https://instagram.com/your-page"
-                    value={form.instagramUrl}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, instagramUrl: event.target.value }))
-                    }
-                  />
-                </label>
-              </>
-            ) : null}
+              ) : null}
 
-            {showLooAmenitiesFieldset ? (
-              <fieldset className="pin-category-fieldset loo-amenities-fieldset">
-                <legend>Amenities</legend>
-                <p className="pin-category-hint">What’s available at this restroom?</p>
-                {LOO_AMENITY_FIELDS.map(({ key, label }) => (
-                  <label key={key} className="checkbox-field pin-category-option loo-amenity-option">
+              {shouldShowRestaurantFields ? (
+                <>
+                  <div className="price-with-free-field">
+                    <span className="price-with-free-label">Operating Hours</span>
+                    <div className="price-with-free-row">
+                      <input
+                        type="time"
+                        value={form.openingHours}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, openingHours: event.target.value }))
+                        }
+                        aria-label="Opening time"
+                      />
+                      <input
+                        type="time"
+                        value={form.closingHours}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, closingHours: event.target.value }))
+                        }
+                        aria-label="Closing time"
+                      />
+                    </div>
+                  </div>
+                  <label>
+                    Facebook Link
                     <input
-                      type="checkbox"
-                      checked={Boolean(form[key])}
+                      type="url"
+                      placeholder="https://facebook.com/your-page"
+                      value={form.facebookUrl}
                       onChange={(event) =>
-                        setForm((current) => ({ ...current, [key]: event.target.checked }))
+                        setForm((current) => ({ ...current, facebookUrl: event.target.value }))
                       }
                     />
-                    <span>{label}</span>
                   </label>
-                ))}
-              </fieldset>
-            ) : null}
+                  <label>
+                    Instagram Link
+                    <input
+                      type="url"
+                      placeholder="https://instagram.com/your-page"
+                      value={form.instagramUrl}
+                      onChange={(event) =>
+                        setForm((current) => ({ ...current, instagramUrl: event.target.value }))
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
+
+              {showLooAmenitiesFieldset ? (
+                <fieldset className="pin-category-fieldset loo-amenities-fieldset">
+                  <legend>Amenities</legend>
+                  <p className="pin-category-hint">What’s available at this restroom?</p>
+                  {LOO_AMENITY_FIELDS.map(({ key, label }) => (
+                    <label key={key} className="checkbox-field pin-category-option loo-amenity-option">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(form[key])}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, [key]: event.target.checked }))
+                        }
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+            </div>
 
             <label>
               Additional Details
