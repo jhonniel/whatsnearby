@@ -150,8 +150,8 @@ service cloud.firestore {
       allow update: if request.auth != null && isAdmin();
 
       allow update: if request.auth != null
-        && resource.data.get('ownerUid', '') == request.auth.uid
-        && ownerUpdateKeysOk();
+        && ownerUpdateKeysOk()
+        && claimOwnerOk();
 
       allow update: if request.auth != null
         && noOwnerPin()
@@ -171,8 +171,8 @@ service cloud.firestore {
       allow update: if request.auth != null && isAdmin();
 
       allow update: if request.auth != null
-        && resource.data.get('ownerUid', '') == request.auth.uid
-        && ownerUpdateKeysOk();
+        && ownerUpdateKeysOk()
+        && claimOwnerOk();
 
       allow update: if request.auth != null
         && noOwnerPin()
@@ -192,8 +192,8 @@ service cloud.firestore {
       allow update: if request.auth != null && isAdmin();
 
       allow update: if request.auth != null
-        && resource.data.get('ownerUid', '') == request.auth.uid
-        && ownerUpdateKeysOk();
+        && ownerUpdateKeysOk()
+        && claimOwnerOk();
 
       allow update: if request.auth != null
         && noOwnerPin()

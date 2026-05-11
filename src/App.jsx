@@ -30,7 +30,6 @@ import {
 } from 'react-leaflet'
 import {
   Droplets,
-  ImagePlus,
   MirrorRound,
   Moon,
   ShowerHead,
@@ -44,8 +43,6 @@ import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
 import { LandingPage } from './LandingPage'
 import { ProtomapsBasemap } from './ProtomapsBasemap'
-import { hasSupabaseConfig, supabase, supabaseBucket } from './supabase'
-
 const EXTRA_ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || '')
   .split(',')
   .map((s) => s.trim())
@@ -165,99 +162,7 @@ const GEOLOCATION_RETRY_OPTIONS = {
   timeout: 120_000,
 }
 
-const IMAGE_MAX_DIMENSION = 1600
-const IMAGE_UPLOAD_QUALITY = 0.72
-const MAX_PIN_IMAGES = 5
 const PROTOMAPS_MAX_ZOOM = 15
-
-function safeImageBaseName(name) {
-  return String(name || 'image')
-    .replace(/\.[a-z0-9]+$/i, '')
-    .replace(/[^a-z0-9_-]+/gi, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40)
-}
-
-async function imageFileToBitmap(file) {
-  if (typeof createImageBitmap === 'function') {
-    try {
-      return await createImageBitmap(file)
-    } catch {
-      // Fallback to HTMLImageElement decoding below.
-    }
-  }
-  return new Promise((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file)
-    const image = new Image()
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl)
-      resolve(image)
-    }
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
-      reject(new Error('Image decode failed.'))
-    }
-    image.src = objectUrl
-  })
-}
-
-async function compressImageFile(file) {
-  const decoded = await imageFileToBitmap(file)
-  const width = decoded.width
-  const height = decoded.height
-  const scale = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(width, height))
-  const targetWidth = Math.max(1, Math.round(width * scale))
-  const targetHeight = Math.max(1, Math.round(height * scale))
-  const canvas = document.createElement('canvas')
-  canvas.width = targetWidth
-  canvas.height = targetHeight
-  const context = canvas.getContext('2d')
-  if (!context) {
-    throw new Error('Canvas compression is unavailable in this browser.')
-  }
-  context.drawImage(decoded, 0, 0, targetWidth, targetHeight)
-  if (typeof decoded.close === 'function') {
-    decoded.close()
-  }
-  const blob = await new Promise((resolve) => {
-    canvas.toBlob((result) => resolve(result), 'image/webp', IMAGE_UPLOAD_QUALITY)
-  })
-  if (!blob) {
-    throw new Error('Could not compress the selected image.')
-  }
-  return blob
-}
-
-async function uploadImagesToSupabase({ files, pinId }) {
-  if (!files?.length) return []
-  if (!hasSupabaseConfig || !supabase) {
-    throw new Error('Supabase Storage is not configured.')
-  }
-  const uploads = files.slice(0, MAX_PIN_IMAGES)
-  const uploadedUrls = []
-  for (let i = 0; i < uploads.length; i += 1) {
-    const file = uploads[i]
-    const compressed = await compressImageFile(file)
-    const baseName = safeImageBaseName(file.name)
-    const path = `pins/${pinId}/${Date.now()}-${i + 1}-${baseName}.webp`
-    const { error: uploadError } = await supabase.storage
-      .from(supabaseBucket)
-      .upload(path, compressed, {
-        contentType: 'image/webp',
-        cacheControl: '31536000',
-        upsert: false,
-      })
-    if (uploadError) {
-      throw new Error(uploadError.message || 'Supabase upload failed.')
-    }
-    const { data } = supabase.storage.from(supabaseBucket).getPublicUrl(path)
-    if (data?.publicUrl) {
-      uploadedUrls.push(data.publicUrl)
-    }
-  }
-  return uploadedUrls
-}
 
 function mapIdToPath(mapId) {
   return MAP_REGISTRY[mapId]?.path ?? '/'
@@ -497,8 +402,6 @@ function App() {
   const [mobileFilterMenuOpen, setMobileFilterMenuOpen] = useState(false)
   const [isMarkerPopupOpen, setIsMarkerPopupOpen] = useState(false)
   const [lightboxImageUrl, setLightboxImageUrl] = useState('')
-  const [keptImageUrls, setKeptImageUrls] = useState([])
-  const imageInputRef = useRef(null)
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
   const [mapInstance, setMapInstance] = useState(null)
@@ -540,7 +443,6 @@ function App() {
     facebookUrl: '',
     instagramUrl: '',
     details: '',
-    images: [],
     bidet: false,
     shower: false,
     cleanWater: false,
@@ -617,7 +519,6 @@ function App() {
       setFormMode('create')
       setEditingPinId(null)
       setEditingPinCollection(null)
-      setKeptImageUrls([])
       setNewPinCategory('')
       setFilterRating('all')
       setFilterCategory('all')
@@ -803,77 +704,6 @@ function App() {
     if (formMode === 'edit') return editingPinCollection === 'loos'
     return newPinCategory === 'loos'
   }, [activeMapId, formMode, editingPinCollection, newPinCategory])
-
-  const editingPinImageUrls = useMemo(() => {
-    if (formMode !== 'edit' || !editingPinId) return []
-    const editingPin = pins.find(
-      (pin) =>
-        pin.id === editingPinId &&
-        (editingPinCollection == null || pinFirestoreCollection(pin) === editingPinCollection),
-    )
-    return Array.isArray(editingPin?.imageUrls) ? editingPin.imageUrls : []
-  }, [pins, formMode, editingPinId, editingPinCollection])
-
-  const selectedImagePreviewUrls = useMemo(
-    () =>
-      (form.images || [])
-        .map((file) => {
-          try {
-            return URL.createObjectURL(file)
-          } catch {
-            return null
-          }
-        })
-        .filter(Boolean),
-    [form.images],
-  )
-
-  const selectedNewImageCount = (form.images || []).length
-  const keptCurrentImageCount = formMode === 'edit' ? keptImageUrls.length : 0
-  const selectedImageCount = selectedNewImageCount + keptCurrentImageCount
-  const availableImageSlots = Math.max(0, MAX_PIN_IMAGES - selectedImageCount)
-
-  useEffect(() => {
-    return () => {
-      selectedImagePreviewUrls.forEach((url) => URL.revokeObjectURL(url))
-    }
-  }, [selectedImagePreviewUrls])
-
-  const handlePickImages = (event) => {
-    const picked = Array.from(event.target.files ?? [])
-    const currentCount = (form.images || []).length
-    const keptCount = formMode === 'edit' ? keptImageUrls.length : 0
-    const remaining = Math.max(0, MAX_PIN_IMAGES - keptCount - currentCount)
-
-    if (remaining <= 0) {
-      setFormError(`You can upload up to ${MAX_PIN_IMAGES} images per pin.`)
-      event.target.value = ''
-      return
-    }
-
-    const toAdd = picked.slice(0, remaining)
-    if (picked.length > remaining) {
-      setFormError(`Only ${remaining} more image${remaining === 1 ? '' : 's'} can be added.`)
-    } else {
-      setFormError('')
-    }
-
-    setForm((current) => ({
-      ...current,
-      images: [...(current.images || []), ...toAdd].slice(0, MAX_PIN_IMAGES),
-    }))
-    event.target.value = ''
-  }
-
-  const toggleKeptImage = (url) => {
-    setKeptImageUrls((current) => {
-      if (current.includes(url)) {
-        return current.filter((item) => item !== url)
-      }
-      const next = [...current, url]
-      return next.slice(0, MAX_PIN_IMAGES)
-    })
-  }
 
   const requestBrowserLocationPermission = async () => {
     if (!navigator.geolocation) {
@@ -1165,17 +995,11 @@ out tags qt 40;
     setNotice('')
     setFormError('')
 
-    if (form.images.length > 0 && !hasSupabaseConfig) {
-      setFormError('Image upload requires Supabase Storage configuration.')
-      setSaving(false)
-      return
-    }
     setSaving(false)
 
     setFormMode('create')
     setEditingPinId(null)
     setEditingPinCollection(null)
-    setKeptImageUrls([])
     setNewPinCategory('')
     setForm({
       name: '',
@@ -1188,7 +1012,6 @@ out tags qt 40;
       facebookUrl: '',
       instagramUrl: '',
       details: '',
-      images: [],
       bidet: false,
       shower: false,
       cleanWater: false,
@@ -1230,13 +1053,6 @@ out tags qt 40;
       return
     }
 
-    if (!isAdmin) {
-      if (pin.ownerUid && pin.ownerUid !== currentUser.uid) {
-        setError('Only the account that created this pin can update it.')
-        return
-      }
-    }
-
     // Keep the UI focused: close any open map popup before showing edit form.
     if (mapInstance) {
       mapInstance.closePopup()
@@ -1259,14 +1075,12 @@ out tags qt 40;
       facebookUrl: pin.facebookUrl || '',
       instagramUrl: pin.instagramUrl || '',
       details: pin.details || '',
-      images: [],
       bidet: Boolean(pin.bidet),
       shower: Boolean(pin.shower),
       cleanWater: Boolean(pin.cleanWater),
       cleanToilet: Boolean(pin.cleanToilet),
       mirror: Boolean(pin.mirror),
     })
-    setKeptImageUrls(Array.isArray(pin.imageUrls) ? pin.imageUrls.slice(0, MAX_PIN_IMAGES) : [])
     setFormError('')
     setError('')
     setNotice('')
@@ -1487,10 +1301,6 @@ out tags qt 40;
       setFormError('Location name is required.')
       return
     }
-    if ((form.images || []).length > MAX_PIN_IMAGES) {
-      setFormError(`You can upload up to ${MAX_PIN_IMAGES} images per pin.`)
-      return
-    }
     const numericRating = Number(form.rating)
     if (!form.rating || Number.isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
       setFormError('Please set a rating between 1 and 5.')
@@ -1606,25 +1416,7 @@ out tags qt 40;
       }
 
       const claimOwner = Boolean(priorPin && !priorPin.ownerUid && currentUser?.uid)
-      let nextImageUrls = [...keptImageUrls]
-      if (nextImageUrls.length + (form.images || []).length > MAX_PIN_IMAGES) {
-        setFormError(`You can keep/upload up to ${MAX_PIN_IMAGES} images per pin.`)
-        setSaving(false)
-        return
-      }
-      if (form.images.length > 0) {
-        try {
-          setNotice('Compressing and uploading images...')
-          const uploadedImageUrls = await uploadImagesToSupabase({ files: form.images, pinId: targetId })
-          if (uploadedImageUrls.length > 0) {
-            nextImageUrls = [...nextImageUrls, ...uploadedImageUrls].slice(0, MAX_PIN_IMAGES)
-          }
-        } catch (imageError) {
-          setFormError(imageError?.message || 'Image upload failed.')
-          setSaving(false)
-          return
-        }
-      }
+      const nextImageUrls = Array.isArray(priorPin?.imageUrls) ? priorPin.imageUrls : []
 
       setLocalPins((current) =>
         current.map((pin) =>
@@ -1692,7 +1484,6 @@ out tags qt 40;
         setFormMode('create')
         setEditingPinId(null)
         setEditingPinCollection(null)
-        setKeptImageUrls([])
         setNewPinCategory('')
       } catch (saveError) {
         setError(saveError?.message || 'Failed to update pin.')
@@ -1716,23 +1507,11 @@ out tags qt 40;
     let syncedPinId = null
     try {
       const pinRef = doc(collection(db, createTargetCollection))
-      let uploadedImageUrls = []
-      if (form.images.length > 0) {
-        try {
-          setNotice('Compressing and uploading images...')
-          uploadedImageUrls = await uploadImagesToSupabase({ files: form.images, pinId: pinRef.id })
-        } catch (imageError) {
-          setFormError(imageError?.message || 'Image upload failed.')
-          setLocalPins((current) => current.filter((pin) => pin.id !== tempId))
-          setSaving(false)
-          return
-        }
-      }
 
       const syncedOptimisticPin = {
         ...optimisticPin,
         id: pinRef.id,
-        imageUrls: uploadedImageUrls,
+        imageUrls: [],
         localOnly: false,
         collection: createTargetCollection,
         ratingCount: 1,
@@ -1781,8 +1560,8 @@ out tags qt 40;
 
     const margin = 12
     const preferredWidth = 392
-    /** Edit form is taller (images, keep/remove, amenities); used only to pick above vs below the pin. */
-    const estimatedModalHeight = formMode === 'edit' ? 720 : 520
+    /** Edit form is taller (amenities); used only to pick above vs below the pin. */
+    const estimatedModalHeight = formMode === 'edit' ? 620 : 520
     const anchorOffset = 24
 
     function layoutAnchoredModal() {
@@ -2480,108 +2259,6 @@ out tags qt 40;
                   </label>
                 ))}
               </fieldset>
-            ) : null}
-
-            <label>
-              Images
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="modal-image-input-hidden"
-                onChange={handlePickImages}
-              />
-            </label>
-            <div className="modal-image-uploader-row">
-              <p className="hint modal-image-slot-hint">
-                Up to 5 images per pin ({selectedImageCount}/5 selected, {availableImageSlots} available).
-              </p>
-            </div>
-            {formMode === 'edit' ? (
-              <div className="modal-image-preview-block" aria-label="Current uploaded images">
-                <p className="modal-image-preview-title">Current uploaded images</p>
-                <div className="modal-image-preview-grid">
-                  {availableImageSlots > 0 ? (
-                    <button
-                      type="button"
-                      className="modal-image-add-slot"
-                      onClick={() => imageInputRef.current?.click()}
-                      aria-label="Add image"
-                    >
-                      <ImagePlus className="upload-more-icon-tile" aria-hidden strokeWidth={1.65} />
-                    </button>
-                  ) : null}
-                  {editingPinImageUrls.map((url) => (
-                    <div key={url} className="current-image-item">
-                      <button
-                        type="button"
-                        className="image-thumb-btn image-thumb-btn--modal"
-                        onClick={() => setLightboxImageUrl(url)}
-                        aria-label="View current uploaded image in large size"
-                      >
-                        <img src={url} alt="Current pin upload" className="modal-image-preview" />
-                        <span className="image-thumb-hint">Click to view</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`current-image-toggle-btn secondary${keptImageUrls.includes(url) ? '' : ' is-removed'}`}
-                        onClick={() => toggleKeptImage(url)}
-                      >
-                        {keptImageUrls.includes(url) ? 'Keep' : 'Removed'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {formMode !== 'edit' && (availableImageSlots > 0 || selectedImagePreviewUrls.length > 0) ? (
-              <div className="modal-image-preview-block" aria-label="Selected images preview">
-                <p className="modal-image-preview-title">Selected images</p>
-                <div className="modal-image-preview-grid">
-                  {availableImageSlots > 0 ? (
-                    <button
-                      type="button"
-                      className="modal-image-add-slot"
-                      onClick={() => imageInputRef.current?.click()}
-                      aria-label="Add image"
-                    >
-                      <ImagePlus className="upload-more-icon-tile" aria-hidden strokeWidth={1.65} />
-                    </button>
-                  ) : null}
-                  {selectedImagePreviewUrls.map((url) => (
-                    <button
-                      key={url}
-                      type="button"
-                      className="image-thumb-btn image-thumb-btn--modal"
-                      onClick={() => setLightboxImageUrl(url)}
-                      aria-label="View selected image in large size"
-                    >
-                      <img src={url} alt="Selected upload preview" className="modal-image-preview" />
-                      <span className="image-thumb-hint">Click to view</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {formMode === 'edit' && selectedImagePreviewUrls.length > 0 ? (
-              <div className="modal-image-preview-block" aria-label="New selected images preview">
-                <p className="modal-image-preview-title">New selected images (will replace current)</p>
-                <div className="modal-image-preview-grid">
-                  {selectedImagePreviewUrls.map((url) => (
-                    <button
-                      key={url}
-                      type="button"
-                      className="image-thumb-btn image-thumb-btn--modal"
-                      onClick={() => setLightboxImageUrl(url)}
-                      aria-label="View selected image in large size"
-                    >
-                      <img src={url} alt="Selected upload preview" className="modal-image-preview" />
-                      <span className="image-thumb-hint">Click to view</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
             ) : null}
 
             <label>

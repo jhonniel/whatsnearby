@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.jhanniel.mylocation",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "2"
     },
     "android": {
       "adaptiveIcon": {
