@@ -2,6 +2,16 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "max-age=0, must-revalidate" }]
+    },
+    {
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "max-age=0, must-revalidate" }]
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!.*\\..*).*)",

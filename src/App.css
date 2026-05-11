@@ -621,6 +621,15 @@ button:disabled {
   color: #94a3b8;
 }
 
+.app-shell.dark .popup-updated-line {
+  border-top-color: #334155;
+  color: #94a3b8;
+}
+
+.app-shell.dark .popup-updated-line-label {
+  color: #cbd5e1;
+}
+
 .app-shell.dark .secondary {
   background: #374151;
   color: #e5e7eb;
@@ -1059,22 +1068,26 @@ button:disabled {
 }
 
 .modal h2,
-.popup-content h3 {
+.popup-content h3,
+.pin-detail-article h3 {
   margin: 0;
 }
 
-.popup-content {
+.popup-content,
+.pin-detail-article {
   display: grid;
   gap: 0.38rem;
   font-size: 0.84rem;
 }
 
-.popup-content h3 {
+.popup-content h3,
+.pin-detail-article h3 {
   font-size: 0.88rem;
   line-height: 1.2;
 }
 
-.popup-content p {
+.popup-content p,
+.pin-detail-article p {
   margin: 0.08rem 0;
   font-size: 0.84rem;
   line-height: 1.3;
@@ -1087,6 +1100,20 @@ button:disabled {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #64748b;
+}
+
+.popup-updated-line {
+  margin: 0.45rem 0 0.1rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.popup-updated-line-label {
+  font-weight: 600;
+  color: #475569;
 }
 
 .coordinates {
@@ -1669,12 +1696,13 @@ button:disabled {
 
 /* Pin form card — compact, readable panel */
 .anchored-modal.modal.popup-form {
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.3rem;
+  gap: 0;
   padding: 0.56rem 0.62rem 0.52rem;
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -1682,6 +1710,38 @@ button:disabled {
   box-shadow:
     0 4px 6px -1px rgba(15, 23, 42, 0.07),
     0 18px 42px -12px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+
+/* Scrollable fields only — keeps Close/Save from painting over inputs (flex + overflow bug on mobile WebKit) */
+.anchored-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-right: 0.02rem;
+}
+
+.anchored-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.app-shell.dark .anchored-modal-footer {
+  border-top-color: #334155;
+  background: #1e293b;
 }
 
 .app-shell.dark .anchored-modal.modal.popup-form {
@@ -1704,12 +1764,10 @@ button:disabled {
 @keyframes pin-form-topic-section-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -1804,10 +1862,14 @@ button:disabled {
 }
 
 .anchored-modal .modal-actions {
-  margin-top: 0.4rem;
+  margin-top: 0;
   display: flex;
   justify-content: center;
   width: 100%;
+}
+
+.anchored-modal-actions-close {
+  display: none;
 }
 
 .anchored-modal .modal-actions button[type='submit'] {
@@ -1894,7 +1956,8 @@ button:disabled {
   padding: 0;
 }
 
-.popup-content .loo-amenity-icons-row {
+.popup-content .loo-amenity-icons-row,
+.pin-detail-article .loo-amenity-icons-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -1902,7 +1965,8 @@ button:disabled {
   align-items: center;
 }
 
-.popup-content .loo-amenity-icon-badge {
+.popup-content .loo-amenity-icon-badge,
+.pin-detail-article .loo-amenity-icon-badge {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -1916,7 +1980,8 @@ button:disabled {
   color: #0f766e;
 }
 
-.popup-content .loo-amenity-icon-label {
+.popup-content .loo-amenity-icon-label,
+.pin-detail-article .loo-amenity-icon-label {
   margin-top: 0.12rem;
   font-size: 0.52rem;
   font-weight: 700;
@@ -1943,7 +2008,8 @@ button:disabled {
   mask-position: center;
 }
 
-.app-shell.dark .popup-content .loo-amenity-icon-badge {
+.app-shell.dark .popup-content .loo-amenity-icon-badge,
+.pin-detail-backdrop--dark .pin-detail-article .loo-amenity-icon-badge {
   background: #1e293b;
   border-color: #334155;
   color: #5eead4;
@@ -2031,23 +2097,27 @@ button:disabled {
   background: #64748b;
 }
 
-.popup-main-actions {
+.popup-main-actions,
+.pin-detail-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.35rem;
   margin-top: 0.35rem;
 }
 
-.popup-main-actions .route-btn {
+.popup-main-actions .route-btn,
+.pin-detail-actions .route-btn {
   margin-top: 0;
 }
 
 @media (min-width: 769px) {
-  .popup-main-actions {
+  .popup-main-actions,
+  .pin-detail-actions {
     gap: 0.45rem;
   }
 
-  .popup-main-actions .route-btn {
+  .popup-main-actions .route-btn,
+  .pin-detail-actions .route-btn {
     min-height: 38px;
     font-size: 0.8rem;
   }
@@ -2125,6 +2195,117 @@ button:disabled {
 .checkbox-field input[type='checkbox'] {
   width: 16px;
   height: 16px;
+}
+
+/* Portaled to document.body — centered modal over map, below auth (1500) */
+.pin-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1350;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right, 0px))
+    max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(2, 6, 23, 0.48);
+}
+
+.pin-detail-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(440px, calc(100vw - 1.5rem));
+  max-height: min(88dvh, 680px);
+  margin: auto;
+  box-sizing: border-box;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  box-shadow: 0 22px 55px rgba(15, 23, 42, 0.24);
+  overflow: hidden;
+}
+
+.pin-detail-panel-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem 0.55rem;
+  padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
+  padding-top: max(0.65rem, env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.pin-detail-panel-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pin-detail-panel-close {
+  min-height: 40px;
+  min-width: 40px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pin-detail-panel-close:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.pin-detail-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.5rem max(1rem, env(safe-area-inset-left, 0px)) max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-right, 0px));
+}
+
+.pin-detail-panel-body .pin-detail-article {
+  max-width: none;
+}
+
+.pin-detail-backdrop--dark {
+  background: rgba(2, 6, 23, 0.78);
+}
+
+.pin-detail-backdrop--dark .pin-detail-panel {
+  background: #0f172a;
+  border-color: #334155;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.45);
+}
+
+.pin-detail-backdrop--dark .pin-detail-panel-header {
+  background: #1e293b;
+  border-bottom-color: #334155;
+}
+
+.pin-detail-backdrop--dark .pin-detail-panel-title {
+  color: #f1f5f9;
+}
+
+.pin-detail-backdrop--dark .pin-detail-panel-close {
+  color: #94a3b8;
+}
+
+.pin-detail-backdrop--dark .pin-detail-panel-close:hover {
+  background: #334155;
+  color: #f8fafc;
 }
 
 .auth-backdrop {
@@ -2702,22 +2883,26 @@ button:disabled {
     border-radius: 0 0 10px 10px;
   }
 
-  .popup-content h3 {
+  .popup-content h3,
+  .pin-detail-article h3 {
     font-size: 0.96rem;
     line-height: 1.18;
     word-wrap: break-word;
     overflow-wrap: anywhere;
   }
 
-  .popup-content .hint {
+  .popup-content .hint,
+  .pin-detail-article .hint {
     font-size: 0.72rem;
   }
 
-  .popup-content {
+  .popup-content,
+  .pin-detail-article {
     font-size: 0.82rem;
   }
 
-  .popup-content p {
+  .popup-content p,
+  .pin-detail-article p {
     margin: 0.18rem 0;
     line-height: 1.25;
   }
@@ -2783,7 +2968,6 @@ button:disabled {
     transform: translateX(-50%) !important;
     border-radius: 14px 14px 12px 12px;
     padding: 0.52rem 0.6rem 0.48rem !important;
-    -webkit-overflow-scrolling: touch;
   }
 
   .anchored-modal.modal.popup-form {
@@ -2843,6 +3027,34 @@ button:disabled {
     min-height: 38px;
     font-size: 0.78rem;
     padding: 0.4rem 0.75rem;
+  }
+
+  .anchored-modal-actions-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 10px;
+    flex: 0 0 auto;
+  }
+
+  .anchored-modal .modal-actions.anchored-modal-actions {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: stretch;
+    gap: 0.5rem;
+    max-width: 100%;
+  }
+
+  .anchored-modal .modal-actions.anchored-modal-actions button[type='submit'] {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
   }
 
   .auth-backdrop {
@@ -2978,8 +3190,13 @@ button:disabled {
     padding: 0.38rem 0.44rem 0.36rem;
   }
 
-  .anchored-modal .modal-actions button[type='submit'] {
-    width: min(100%, 10rem);
+  .anchored-modal .modal-actions.anchored-modal-actions button[type='submit'] {
+    min-height: 36px;
+    font-size: 0.76rem;
+    padding: 0.38rem 0.7rem;
+  }
+
+  .anchored-modal-actions-close {
     min-height: 36px;
     font-size: 0.76rem;
     padding: 0.38rem 0.7rem;

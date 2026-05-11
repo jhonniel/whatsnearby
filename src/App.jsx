@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   collection,
   deleteDoc,
@@ -268,6 +269,220 @@ function loosAmenityValues(form) {
   }
 }
 
+/** Firestore Timestamp, Date, millis, ISO string, or { seconds }. */
+function dateFromPinField(value) {
+  if (value == null) return null
+  if (typeof value.toDate === 'function') {
+    try {
+      const d = value.toDate()
+      return Number.isNaN(d.getTime()) ? null : d
+    } catch {
+      return null
+    }
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (typeof value === 'string') {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (typeof value === 'object' && typeof value.seconds === 'number') {
+    const d = new Date(value.seconds * 1000)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
+
+function formatPinListDateTime(value) {
+  const d = dateFromPinField(value)
+  if (!d) return null
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function PinPopupUpdatedLine({ pin }) {
+  if (pin.localOnly) return null
+  const updated = formatPinListDateTime(pin.updatedAt)
+  if (updated) {
+    return (
+      <p className="popup-updated-line">
+        <span className="popup-updated-line-label">Last updated</span> {updated}
+      </p>
+    )
+  }
+  const created = formatPinListDateTime(pin.createdAt)
+  if (created) {
+    return (
+      <p className="popup-updated-line">
+        <span className="popup-updated-line-label">Listed</span> {created}
+      </p>
+    )
+  }
+  return null
+}
+
+function PinReadonlyDetailArticle({
+  pin,
+  activePinsCollection,
+  hasFirebaseConfig,
+  isAdmin,
+  quickRatingBusyKey,
+  adminBusyPinId,
+  routingForPinId,
+  onAnonymousRate,
+  onVerify,
+  onDelete,
+  onDirections,
+  onUpdate,
+  onImageClick,
+}) {
+  return (
+    <article className="pin-detail-article">
+      {pin.collection ? (
+        <p className="hint" style={{ marginBottom: '0.35rem' }}>
+          {mapLayerLabel(pin.collection)}
+        </p>
+      ) : null}
+      <p className="popup-field-label">Location Name</p>
+      <h3>{pin.name}</h3>
+      <p className="popup-field-label">Nearby Landmarks</p>
+      <p>{pin.nearbyLandmarks || 'No nearby landmark'}</p>
+      <Stars value={pin.rating} />
+      {!pin.localOnly && hasFirebaseConfig ? (
+        <div className="quick-rate">
+          <p className="quick-rate-label">Add your rating (no sign-in required)</p>
+          <div className="quick-rate-row" role="group" aria-label="Rate from 1 to 5 stars">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`quick-rate-star ${pin.rating >= n ? 'is-on' : ''}`}
+                onClick={() => onAnonymousRate(pin, n)}
+                disabled={quickRatingBusyKey === pinBusyKey(pin)}
+                aria-label={`Rate ${n} out of 5`}
+              >
+                <span aria-hidden>★</span>
+              </button>
+            ))}
+          </div>
+          {Number(pin.ratingCount) > 1 ? (
+            <p className="quick-rate-meta">
+              From {pin.ratingCount} ratings (shown as a 1–5 average).
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {Array.isArray(pin.imageUrls) && pin.imageUrls.length > 0 ? (
+        <>
+          <p className="popup-field-label">Images</p>
+          <div className="gallery">
+            {pin.imageUrls.map((url) => (
+              <button
+                key={url}
+                type="button"
+                className="image-thumb-btn"
+                onClick={() => onImageClick(url)}
+                aria-label="View image in large size"
+              >
+                <img src={url} alt={pin.name} loading="lazy" />
+                <span className="image-thumb-hint">Click to view</span>
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+      <p className="popup-field-label">Details</p>
+      <p>{pin.details || 'No additional details.'}</p>
+      {(pinFirestoreCollection(pin) || activePinsCollection) === 'restaurants_cafes' ? (
+        <>
+          <p className="popup-field-label">Operating Hours</p>
+          <p>
+            {pin.openingHours || pin.closingHours
+              ? `${formatHourLabel(pin.openingHours || '--:--')} - ${formatHourLabel(pin.closingHours || '--:--')}`
+              : 'Not provided'}
+          </p>
+          {pin.facebookUrl || pin.instagramUrl ? (
+            <>
+              <p className="popup-field-label">Social Media</p>
+              <p>
+                {pin.facebookUrl ? (
+                  <a href={pin.facebookUrl} target="_blank" rel="noopener noreferrer">
+                    Facebook
+                  </a>
+                ) : null}
+                {pin.facebookUrl && pin.instagramUrl ? ' • ' : null}
+                {pin.instagramUrl ? (
+                  <a href={pin.instagramUrl} target="_blank" rel="noopener noreferrer">
+                    Instagram
+                  </a>
+                ) : null}
+              </p>
+            </>
+          ) : null}
+        </>
+      ) : null}
+      {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' &&
+      LOO_AMENITY_FIELDS.some(({ key }) => pin[key]) ? (
+        <div className="loo-amenity-icons-row" role="list" aria-label="Amenities">
+          {LOO_AMENITY_FIELDS.filter(({ key }) => pin[key]).map(({ key, label, Icon }) => (
+            <span key={key} className="loo-amenity-icon-badge" role="listitem" title={label}>
+              <Icon size={18} strokeWidth={1.75} aria-hidden />
+              <span className="loo-amenity-icon-label">{label}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' ? (
+        <p className="price-info">
+          {pin.isFree ? 'Free' : `Price: ₱${Number(pin.price || 0).toFixed(2)}`}
+        </p>
+      ) : null}
+      {pin.verified ? <p className="verified-line">Verified listing</p> : <p className="unverified-line">Not yet verified</p>}
+      {pin.localOnly ? <small className="hint">Local only</small> : null}
+      <PinPopupUpdatedLine pin={pin} />
+      {isAdmin ? (
+        <div className="admin-pin-actions">
+          {!pin.localOnly && !pin.verified ? (
+            <button
+              type="button"
+              className="route-btn admin-verify-btn"
+              onClick={() => onVerify(pin)}
+              disabled={adminBusyPinId === pinBusyKey(pin)}
+            >
+              {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Verify data'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="route-btn admin-delete-btn"
+            onClick={() => onDelete(pin)}
+            disabled={adminBusyPinId === pinBusyKey(pin)}
+          >
+            {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Delete pin'}
+          </button>
+        </div>
+      ) : null}
+      <div className="pin-detail-actions">
+        <button
+          type="button"
+          className="route-btn"
+          onClick={() => onDirections(pin)}
+          disabled={routingForPinId === pinBusyKey(pin)}
+        >
+          {routingForPinId === pinBusyKey(pin) ? 'Routing...' : 'Get Directions'}
+        </button>
+        <button type="button" className="route-btn secondary-btn" onClick={() => onUpdate(pin)}>
+          Update Pin
+        </button>
+      </div>
+    </article>
+  )
+}
+
 function shouldIncludeLoosAmenities({
   formMode,
   activeMapId,
@@ -401,7 +616,7 @@ function App() {
   const [filterRating, setFilterRating] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [mobileFilterMenuOpen, setMobileFilterMenuOpen] = useState(false)
-  const [isMarkerPopupOpen, setIsMarkerPopupOpen] = useState(false)
+  const [pinDetailModalPin, setPinDetailModalPin] = useState(null)
   const [lightboxImageUrl, setLightboxImageUrl] = useState('')
   const [selectedLocation, setSelectedLocation] = useState(null)
   const [selectedScreenPos, setSelectedScreenPos] = useState(null)
@@ -461,9 +676,16 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const onResize = () => setIsMobileViewport(window.innerWidth <= 768)
+    const onResize = () => {
+      setIsMobileViewport(window.innerWidth <= 768)
+    }
+    onResize()
     window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
   }, [])
 
   useEffect(() => {
@@ -523,6 +745,7 @@ function App() {
       setFilterRating('all')
       setFilterCategory('all')
       setMobileFilterMenuOpen(false)
+      setPinDetailModalPin(null)
 
       if (!hasFirebaseConfig) {
         setLoadingPins(false)
@@ -990,6 +1213,7 @@ out tags qt 40;
   }
 
   const openPinForm = async (latlng) => {
+    setPinDetailModalPin(null)
     setError('')
     setNotice('')
     setFormError('')
@@ -1026,6 +1250,15 @@ out tags qt 40;
     setSelectedLocation(latlng)
   }
 
+  const closeAnchoredPinForm = () => {
+    setSelectedLocation(null)
+    setNewPinCategory('')
+    setFormMode('create')
+    setEditingPinId(null)
+    setEditingPinCollection(null)
+    setFormError('')
+  }
+
   useEffect(() => {
     localStorage.setItem('whatsnearby-theme', theme)
   }, [theme])
@@ -1045,6 +1278,7 @@ out tags qt 40;
 
   const openEditPinForm = (pin) => {
     if (!currentUser) {
+      setPinDetailModalPin(null)
       setPendingEditPin(pin)
       setShowAuthModal(true)
       setAuthMode('login')
@@ -1056,7 +1290,7 @@ out tags qt 40;
     if (mapInstance) {
       mapInstance.closePopup()
     }
-    setIsMarkerPopupOpen(false)
+    setPinDetailModalPin(null)
 
     setFormMode('edit')
     setEditingPinId(pin.id)
@@ -1146,6 +1380,7 @@ out tags qt 40;
     ])
 
   const getBestRouteToPin = async (pin) => {
+    setPinDetailModalPin(null)
     if (!userLocation) {
       setError('Enable location first to get directions.')
       return
@@ -1230,7 +1465,7 @@ out tags qt 40;
       setRemotePins((current) =>
         current.map((p) =>
           pinBusyKey(p) === key
-            ? { ...p, rating: newRating, ratingCount: newCount, ratingSum: newSum }
+            ? { ...p, rating: newRating, ratingCount: newCount, ratingSum: newSum, updatedAt: new Date() }
             : p,
         ),
       )
@@ -1278,6 +1513,7 @@ out tags qt 40;
       if (pin.localOnly) {
         setLocalPins((current) => current.filter((item) => item.id !== pin.id))
         setNotice('Local pin removed.')
+        setPinDetailModalPin((current) => (current && current.id === pin.id ? null : current))
         return
       }
       if (!hasFirebaseConfig || !db) {
@@ -1286,6 +1522,7 @@ out tags qt 40;
       }
       await withTimeout(deleteDoc(doc(db, coll, pin.id)), 10000, 'Delete timed out.')
       setNotice('Pin removed.')
+      setPinDetailModalPin((current) => (current && current.id === pin.id ? null : current))
     } catch (deleteError) {
       setError(deleteError?.message || 'Could not delete pin.')
     } finally {
@@ -1789,7 +2026,7 @@ out tags qt 40;
 
       </div>
 
-      {!isMarkerPopupOpen ? (
+      {!pinDetailModalPin ? (
         <div className="map-quick-actions map-quick-actions--floating" aria-label="Map position tools">
           <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
             Home
@@ -1813,7 +2050,7 @@ out tags qt 40;
           </button>
         </div>
       ) : null}
-      {!selectedLocation && !showAuthModal ? (
+      {!selectedLocation && !showAuthModal && !pinDetailModalPin ? (
         <div className="map-notice-stack" aria-live="polite" aria-atomic="true">
           {error ? <p className="map-notice map-notice--error">{error}</p> : null}
           {notice ? <p className="map-notice map-notice--warning">{notice}</p> : null}
@@ -1860,8 +2097,10 @@ out tags qt 40;
               position={[pin.latitude, pin.longitude]}
               icon={markerIconForPin(pin, pinMarkerIcon)}
               eventHandlers={{
-                popupopen: () => setIsMarkerPopupOpen(true),
-                popupclose: () => setIsMarkerPopupOpen(false),
+                click: (e) => {
+                  L.DomEvent.stopPropagation(e)
+                  setPinDetailModalPin(pin)
+                },
               }}
             >
               <Tooltip
@@ -1876,159 +2115,6 @@ out tags qt 40;
               >
                 {pin.name || 'Unnamed place'}
               </Tooltip>
-              <Popup
-                maxWidth={isMobileViewport ? 280 : 360}
-                autoPan
-                autoPanPaddingTopLeft={[16, isMobileViewport ? 190 : 110]}
-                autoPanPaddingBottomRight={[16, isMobileViewport ? 240 : 110]}
-              >
-                <article className="popup-content">
-                  {pin.collection ? (
-                    <p className="hint" style={{ marginBottom: '0.35rem' }}>
-                      {mapLayerLabel(pin.collection)}
-                    </p>
-                  ) : null}
-                  <p className="popup-field-label">Location Name</p>
-                  <h3>{pin.name}</h3>
-                  <p className="popup-field-label">Nearby Landmarks</p>
-                  <p>{pin.nearbyLandmarks || 'No nearby landmark'}</p>
-                  <Stars value={pin.rating} />
-                  {!pin.localOnly && hasFirebaseConfig ? (
-                    <div className="quick-rate">
-                      <p className="quick-rate-label">Add your rating (no sign-in required)</p>
-                      <div className="quick-rate-row" role="group" aria-label="Rate from 1 to 5 stars">
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <button
-                            key={n}
-                            type="button"
-                            className={`quick-rate-star ${pin.rating >= n ? 'is-on' : ''}`}
-                            onClick={() => submitAnonymousRating(pin, n)}
-                            disabled={quickRatingBusyKey === pinBusyKey(pin)}
-                            aria-label={`Rate ${n} out of 5`}
-                          >
-                            <span aria-hidden>★</span>
-                          </button>
-                        ))}
-                      </div>
-                      {Number(pin.ratingCount) > 1 ? (
-                        <p className="quick-rate-meta">
-                          From {pin.ratingCount} ratings (shown as a 1–5 average).
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {Array.isArray(pin.imageUrls) && pin.imageUrls.length > 0 ? (
-                    <>
-                      <p className="popup-field-label">Images</p>
-                      <div className="gallery">
-                      {pin.imageUrls.map((url) => (
-                        <button
-                          key={url}
-                          type="button"
-                          className="image-thumb-btn"
-                          onClick={() => setLightboxImageUrl(url)}
-                          aria-label="View image in large size"
-                        >
-                          <img src={url} alt={pin.name} loading="lazy" />
-                          <span className="image-thumb-hint">Click to view</span>
-                        </button>
-                      ))}
-                      </div>
-                    </>
-                  ) : null}
-                  <p className="popup-field-label">Details</p>
-                  <p>{pin.details || 'No additional details.'}</p>
-                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'restaurants_cafes' ? (
-                    <>
-                      <p className="popup-field-label">Operating Hours</p>
-                      <p>
-                        {pin.openingHours || pin.closingHours
-                          ? `${formatHourLabel(pin.openingHours || '--:--')} - ${formatHourLabel(pin.closingHours || '--:--')}`
-                          : 'Not provided'}
-                      </p>
-                      {pin.facebookUrl || pin.instagramUrl ? (
-                        <>
-                          <p className="popup-field-label">Social Media</p>
-                          <p>
-                            {pin.facebookUrl ? (
-                              <a href={pin.facebookUrl} target="_blank" rel="noopener noreferrer">
-                                Facebook
-                              </a>
-                            ) : null}
-                            {pin.facebookUrl && pin.instagramUrl ? ' • ' : null}
-                            {pin.instagramUrl ? (
-                              <a href={pin.instagramUrl} target="_blank" rel="noopener noreferrer">
-                                Instagram
-                              </a>
-                            ) : null}
-                          </p>
-                        </>
-                      ) : null}
-                    </>
-                  ) : null}
-                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' &&
-                  LOO_AMENITY_FIELDS.some(({ key }) => pin[key]) ? (
-                    <div className="loo-amenity-icons-row" role="list" aria-label="Amenities">
-                      {LOO_AMENITY_FIELDS.filter(({ key }) => pin[key]).map(({ key, label, Icon }) => (
-                        <span key={key} className="loo-amenity-icon-badge" role="listitem" title={label}>
-                          <Icon size={18} strokeWidth={1.75} aria-hidden />
-                          <span className="loo-amenity-icon-label">{label}</span>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {(pinFirestoreCollection(pin) || activePinsCollection) === 'loos' ? (
-                    <p className="price-info">
-                      {pin.isFree ? 'Free' : `Price: ₱${Number(pin.price || 0).toFixed(2)}`}
-                    </p>
-                  ) : null}
-                  {pin.verified ? (
-                    <p className="verified-line">Verified listing</p>
-                  ) : (
-                    <p className="unverified-line">Not yet verified</p>
-                  )}
-                  {pin.localOnly ? <small className="hint">Local only</small> : null}
-                  {isAdmin ? (
-                    <div className="admin-pin-actions">
-                      {!pin.localOnly && !pin.verified ? (
-                        <button
-                          type="button"
-                          className="route-btn admin-verify-btn"
-                          onClick={() => verifyPinAsAdmin(pin)}
-                          disabled={adminBusyPinId === pinBusyKey(pin)}
-                        >
-                          {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Verify data'}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="route-btn admin-delete-btn"
-                        onClick={() => deletePinAsAdmin(pin)}
-                        disabled={adminBusyPinId === pinBusyKey(pin)}
-                      >
-                        {adminBusyPinId === pinBusyKey(pin) ? 'Working…' : 'Delete pin'}
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="popup-main-actions">
-                    <button
-                      type="button"
-                      className="route-btn"
-                      onClick={() => getBestRouteToPin(pin)}
-                      disabled={routingForPinId === pinBusyKey(pin)}
-                    >
-                      {routingForPinId === pinBusyKey(pin) ? 'Routing...' : 'Get Directions'}
-                    </button>
-                    <button
-                      type="button"
-                      className="route-btn secondary-btn"
-                      onClick={() => openEditPinForm(pin)}
-                    >
-                      Update Pin
-                    </button>
-                  </div>
-                </article>
-              </Popup>
             </Marker>
           ))}
 
@@ -2097,13 +2183,11 @@ out tags qt 40;
               type="button"
               className="modal-close"
               aria-label="Close add pin modal"
-              onClick={() => {
-                setSelectedLocation(null)
-                setNewPinCategory('')
-              }}
+              onClick={closeAnchoredPinForm}
             >
               ×
             </button>
+            <div className="anchored-modal-body">
             <p className="coordinates">
               {selectedLocation.lat.toFixed(5)}, {selectedLocation.lng.toFixed(5)}
             </p>
@@ -2287,13 +2371,24 @@ out tags qt 40;
                 onChange={(event) => setForm((current) => ({ ...current, details: event.target.value }))}
               />
             </label>
+            </div>
 
-            <div className="modal-actions">
+            <div className="anchored-modal-footer">
+            <div className="modal-actions anchored-modal-actions">
+              <button
+                type="button"
+                className="secondary anchored-modal-actions-close"
+                aria-label="Close without saving"
+                onClick={closeAnchoredPinForm}
+              >
+                Close
+              </button>
               <button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : formMode === 'edit' ? 'Update Pin' : 'Save To Map'}
               </button>
             </div>
             <p className="modal-warning">⚠ Unsaved pins will disappear</p>
+            </div>
           </form>
         ) : null}
       </section>
@@ -2302,6 +2397,60 @@ out tags qt 40;
           © {new Date().getFullYear()} whatsnearby — community maps for everyday needs.
         </small>
       </footer>
+      {pinDetailModalPin
+        ? createPortal(
+            <div
+              className={[
+                'pin-detail-backdrop',
+                theme === 'dark' ? 'pin-detail-backdrop--dark' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              role="presentation"
+              onClick={() => setPinDetailModalPin(null)}
+            >
+              <div
+                className="pin-detail-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="pin-detail-heading"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="pin-detail-panel-header">
+                  <h2 id="pin-detail-heading" className="pin-detail-panel-title">
+                    Place details
+                  </h2>
+                  <button
+                    type="button"
+                    className="pin-detail-panel-close"
+                    aria-label="Close place details"
+                    onClick={() => setPinDetailModalPin(null)}
+                  >
+                    ×
+                  </button>
+                </header>
+                <div className="pin-detail-panel-body">
+                  <PinReadonlyDetailArticle
+                    pin={pinDetailModalPin}
+                    activePinsCollection={activePinsCollection}
+                    hasFirebaseConfig={hasFirebaseConfig}
+                    isAdmin={isAdmin}
+                    quickRatingBusyKey={quickRatingBusyKey}
+                    adminBusyPinId={adminBusyPinId}
+                    routingForPinId={routingForPinId}
+                    onAnonymousRate={submitAnonymousRating}
+                    onVerify={verifyPinAsAdmin}
+                    onDelete={deletePinAsAdmin}
+                    onDirections={getBestRouteToPin}
+                    onUpdate={openEditPinForm}
+                    onImageClick={setLightboxImageUrl}
+                  />
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       {showAuthModal ? (
         <section className="auth-backdrop">
           <form className="auth-modal" onSubmit={submitAuth}>
