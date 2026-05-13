@@ -561,16 +561,21 @@ function MapInstanceBridge({ onMapReady }) {
 }
 
 function SelectedPinOverlayTracker({ selectedLocation, onPositionChange }) {
+  const updatePosition = (map, latlng) => {
+    try {
+      const point = map.latLngToContainerPoint(latlng)
+      onPositionChange({ x: point.x, y: point.y })
+    } catch {
+      // Map may not be fully initialized yet — caller will retry on next move/zoom/effect.
+    }
+  }
+
   const map = useMapEvents({
     move() {
-      if (!selectedLocation) return
-      const point = map.latLngToContainerPoint(selectedLocation)
-      onPositionChange({ x: point.x, y: point.y })
+      if (selectedLocation) updatePosition(map, selectedLocation)
     },
     zoom() {
-      if (!selectedLocation) return
-      const point = map.latLngToContainerPoint(selectedLocation)
-      onPositionChange({ x: point.x, y: point.y })
+      if (selectedLocation) updatePosition(map, selectedLocation)
     },
   })
 
@@ -579,8 +584,11 @@ function SelectedPinOverlayTracker({ selectedLocation, onPositionChange }) {
       onPositionChange(null)
       return
     }
-    const point = map.latLngToContainerPoint(selectedLocation)
-    onPositionChange({ x: point.x, y: point.y })
+    updatePosition(map, selectedLocation)
+    // Retry once on next animation frame in case the map size hasn't settled yet.
+    const raf = requestAnimationFrame(() => updatePosition(map, selectedLocation))
+    return () => cancelAnimationFrame(raf)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, onPositionChange, selectedLocation])
 
   return null
@@ -1020,7 +1028,17 @@ function App() {
     const mergeForm = options.mergeForm !== false
     setReverseLookupLoading(true)
     try {
-      const response = await fetch(
+      const fetchWithTimeout = (url, init, timeoutMs = 8000) => {
+        const controller =
+          typeof AbortController !== 'undefined' ? new AbortController() : null
+        const timer = controller
+          ? setTimeout(() => controller.abort(), timeoutMs)
+          : null
+        return fetch(url, { ...(init || {}), signal: controller?.signal }).finally(() => {
+          if (timer) clearTimeout(timer)
+        })
+      }
+      const response = await fetchWithTimeout(
         `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2`,
       )
       const data = await response.json()
@@ -1095,13 +1113,17 @@ function App() {
 out tags qt 40;
 `.trim()
         try {
-          const overpassResponse = await fetch('https://overpass-api.de/api/interpreter', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          const overpassResponse = await fetchWithTimeout(
+            'https://overpass-api.de/api/interpreter',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+              },
+              body: `data=${encodeURIComponent(overpassQuery)}`,
             },
-            body: `data=${encodeURIComponent(overpassQuery)}`,
-          })
+            10000,
+          )
           if (!overpassResponse.ok) return []
           const overpassData = await overpassResponse.json()
           const excluded = String(excludedName || '').trim().toLowerCase()
@@ -1212,7 +1234,7 @@ out tags qt 40;
     }
   }
 
-  const openPinForm = async (latlng) => {
+  const openPinForm = (latlng) => {
     setPinDetailModalPin(null)
     setError('')
     setNotice('')
@@ -1241,13 +1263,23 @@ out tags qt 40;
       cleanToilet: false,
       mirror: false,
     })
-    const reverseResult = await reverseGeocode(latlng.lat, latlng.lng)
-    if (reverseResult?.blocked) {
-      setSelectedLocation(null)
-      setError('Location cannot be pinned (sea/lake/river).')
-      return
-    }
+
+    // Show the form immediately so users can input details even if reverse-geocode is slow / offline.
     setSelectedLocation(latlng)
+
+    // Reverse-geocode in the background to suggest landmarks and block water/sea locations.
+    reverseGeocode(latlng.lat, latlng.lng)
+      .then((reverseResult) => {
+        if (reverseResult?.blocked) {
+          setSelectedLocation((current) =>
+            current && current.lat === latlng.lat && current.lng === latlng.lng ? null : current,
+          )
+          setError('Location cannot be pinned (sea/lake/river).')
+        }
+      })
+      .catch(() => {
+        // Non-fatal: reverse-geocode errors are surfaced inside reverseGeocode itself.
+      })
   }
 
   const closeAnchoredPinForm = () => {
@@ -2173,11 +2205,28 @@ out tags qt 40;
           </div>
         ) : null}
 
-        {selectedLocation && selectedScreenPos ? (
-          <form
-            className={`modal popup-form anchored-modal ${showBelowPin ? 'below-pin' : ''}`}
+      </section>
+
+      {/*
+       * Pin form lives OUTSIDE .map-shell on purpose. .map-shell creates a `z-index: 0`
+       * stacking context for the Leaflet map, which would otherwise trap this form
+       * below the chrome/footer layers (z-index 620) and hide it from view.
+       */}
+      {selectedLocation && isMobileViewport ? (
+        <div
+          className="anchored-modal-backdrop"
+          role="presentation"
+          aria-hidden="true"
+        />
+      ) : null}
+
+      {selectedLocation ? (
+        <form
+            className={`modal popup-form anchored-modal ${showBelowPin ? 'below-pin' : ''}${
+              isMobileViewport || !selectedScreenPos ? ' anchored-modal--mobile-center' : ''
+            }`}
             onSubmit={savePin}
-            style={anchoredModalStyle}
+            style={isMobileViewport || !selectedScreenPos ? undefined : anchoredModalStyle}
           >
             <button
               type="button"
@@ -2391,7 +2440,6 @@ out tags qt 40;
             </div>
           </form>
         ) : null}
-      </section>
       <footer className="map-footer-layer" role="contentinfo" aria-label="Site footer">
         <small className="map-footer-copy">
           © {new Date().getFullYear()} whatsnearby — community maps for everyday needs.

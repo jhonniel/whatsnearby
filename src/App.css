@@ -1694,6 +1694,26 @@ button:disabled {
   scrollbar-gutter: stable;
 }
 
+/* Mobile pin form: centered modal — avoids anchored-position calc failures in WebViews. */
+.anchored-modal.anchored-modal--mobile-center {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100vw - 1.25rem));
+  max-width: calc(100vw - 1rem);
+  max-height: min(86dvh, calc(100dvh - 1.5rem));
+  z-index: 1300;
+}
+
+.anchored-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1290;
+  background: rgba(2, 6, 23, 0.48);
+  pointer-events: none;
+}
+
 /* Pin form card — compact, readable panel */
 .anchored-modal.modal.popup-form {
   position: relative;
