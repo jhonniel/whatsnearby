@@ -35,8 +35,8 @@ It includes a professional landing experience, map category tiles, mobile-respon
   - user-facing form validation
   - local fallback when cloud sync fails
 - Routing:
-  - "Get Directions" from user location to selected loo
-  - route polyline rendering + distance/time summary
+  - "Get Directions" from user location to a pin via **TomTom Routing** (Maps SDK)
+  - route line on the map + distance/time summary
 - Authentication:
   - login/signup modal (Firebase Auth)
   - logout support
@@ -47,15 +47,16 @@ It includes a professional landing experience, map category tiles, mobile-respon
 - Firestore sync:
   - realtime snapshot updates from `loos` collection
   - optimistic local pin display while sync happens
+- **CSV import (restaurants & cafés):** on the Restaurants & Cafe or community map, use **Import CSV** to paste rows (`name, address, rating, reviews, category, phone` — same shape as a Google Sheet export). The app geocodes addresses with **OpenStreetMap Nominatim** (throttled) and saves to the `restaurants_cafes` collection. Requires Firebase.
 
 ## Tech Stack
 
 - React (functional components + hooks)
 - Firebase Firestore
 - Firebase Authentication
-- Leaflet + React Leaflet + OpenStreetMap tiles
-- Nominatim reverse geocoding
-- OSRM directions API
+- **TomTom Maps SDK for JavaScript** (`@tomtom-org/maps-sdk`) — map display + routing
+- Leaflet on the landing-page preview map only
+- Nominatim reverse geocoding (pin placement / CSV import)
 
 ## Getting Started
 
@@ -71,7 +72,9 @@ It includes a professional landing experience, map category tiles, mobile-respon
    cp .env.example .env
    ```
 
-3. Fill `.env` with your Firebase Web app config values.
+3. Fill `.env` with your Firebase Web app config values and a **TomTom API key** (`VITE_TOMTOM_API_KEY` from [TomTom Developer](https://developer.tomtom.com/)).
+
+   Enable **Map Display**, **Routing**, and **Traffic** APIs for that key (traffic flow + incidents on the map).
 
 4. In Firebase Console:
    - Enable **Firestore Database**

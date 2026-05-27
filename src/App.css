@@ -206,6 +206,158 @@ html:has(main.app-shell) body {
   gap: 0.45rem;
 }
 
+/* On-map traffic controls — bottom-left, above the floating map toolbar */
+.map-traffic-panel {
+  position: absolute;
+  top: auto;
+  bottom: max(5.25rem, calc(env(safe-area-inset-bottom, 0px) + 5rem));
+  left: max(0.55rem, env(safe-area-inset-left, 0px));
+  right: auto;
+  z-index: 640;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  min-width: 10.5rem;
+  max-width: min(12rem, 58vw);
+}
+
+.app-shell.dark .map-traffic-panel {
+  background: rgba(15, 23, 42, 0.94);
+  border-color: #334155;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+
+.map-traffic-panel-heading {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.app-shell.dark .map-traffic-panel-heading {
+  color: #94a3b8;
+}
+
+.map-traffic-panel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 34px;
+  padding: 0.32rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.map-traffic-panel-btn span {
+  white-space: nowrap;
+}
+
+.app-shell.dark .map-traffic-panel-btn {
+  background: #1e293b;
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
+.map-traffic-panel-btn.is-active {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.map-traffic-legend {
+  margin: 0.1rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.45rem;
+  font-size: 0.62rem;
+  color: #64748b;
+}
+
+.app-shell.dark .map-traffic-legend {
+  color: #94a3b8;
+}
+
+.map-traffic-legend-swatch {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  margin-right: 0.12rem;
+  vertical-align: middle;
+}
+
+.map-traffic-legend-swatch--free {
+  background: #22c55e;
+}
+
+.map-traffic-legend-swatch--slow {
+  background: #f59e0b;
+}
+
+.map-traffic-legend-swatch--heavy {
+  background: #ef4444;
+}
+
+.map-traffic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.map-traffic-toggle.is-active {
+  background: linear-gradient(135deg, #0d9488, #0f766e) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 0 4px 14px rgba(15, 118, 110, 0.35);
+}
+
+.app-shell.dark .map-traffic-toggle.is-active {
+  background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.mobile-filter-traffic-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.app-shell.dark .mobile-filter-traffic-label {
+  color: #94a3b8;
+}
+
+.mobile-filter-traffic-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.mobile-filter-traffic-toggles .map-traffic-toggle {
+  flex: 1 1 auto;
+  justify-content: center;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.55rem;
+}
+
 .map-quick-actions--inline {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -446,7 +598,9 @@ button:disabled {
 }
 
 .map,
-.map.leaflet-container {
+.map.leaflet-container,
+.map.tomtom-map-host,
+.map.tomtom-map-fallback {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -455,6 +609,97 @@ button:disabled {
   overflow: hidden;
   border: none;
   background: #e2e8f0;
+}
+
+.tomtom-map-host .maplibregl-canvas,
+.tomtom-map-host .maplibregl-map {
+  width: 100%;
+  height: 100%;
+}
+
+.tomtom-map-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.tomtom-map-fallback-card {
+  max-width: 28rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  text-align: center;
+}
+
+.app-shell.dark .tomtom-map-fallback-card {
+  background: #1e293b;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+.tomtom-map-fallback-title {
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.tomtom-map-fallback-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.app-shell.dark .tomtom-map-fallback-text {
+  color: #94a3b8;
+}
+
+.tomtom-pin-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.tomtom-pin-marker .pin-name-label {
+  position: relative;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tomtom-pin-marker .toilet-marker {
+  font-size: 1.75rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.35));
+}
+
+.tomtom-csv-preview-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.tomtom-csv-preview-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0f766e;
+  background: rgba(240, 253, 250, 0.96);
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.tomtom-user-pin-img {
+  display: block;
+  filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.35));
 }
 
 /* OSM / Leaflet attribution: compact chip anchored to bottom-left */
@@ -2699,6 +2944,8 @@ button:disabled {
     z-index: 628;
     transform: translateX(-50%);
     flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 0.26rem;
     padding: 0.28rem 0.36rem;
@@ -3239,3 +3486,270 @@ button:disabled {
     min-height: 44px;
   }
 }
+
+/* CSV restaurant import dialog */
+.csv-import-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1380;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.csv-import-backdrop--dark {
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.csv-import-panel {
+  width: min(640px, 100%);
+  max-height: min(90dvh, calc(100dvh - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow:
+    0 22px 50px rgba(15, 23, 42, 0.18),
+    0 6px 16px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.csv-import-backdrop--dark .csv-import-panel {
+  background: #1e293b;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+.csv-import-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.csv-import-backdrop--dark .csv-import-panel-header {
+  border-bottom-color: #334155;
+}
+
+.csv-import-panel-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.csv-import-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.csv-import-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.csv-import-backdrop--dark .csv-import-close:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.csv-import-lead {
+  margin: 0;
+  padding: 0.65rem 1rem 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.csv-import-backdrop--dark .csv-import-lead {
+  color: #94a3b8;
+}
+
+.csv-import-lead a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.csv-import-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72em;
+}
+
+.csv-import-file {
+  padding: 0 1rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.csv-import-file input[type='file'] {
+  font-size: 0.72rem;
+}
+
+.csv-import-textarea {
+  margin: 0 1rem;
+  width: calc(100% - 2rem);
+  box-sizing: border-box;
+  min-height: 8rem;
+  padding: 0.5rem 0.55rem;
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.35;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  resize: vertical;
+}
+
+.csv-import-backdrop--dark .csv-import-textarea {
+  background: #0f172a;
+  border-color: #475569;
+  color: #e2e8f0;
+}
+
+.csv-import-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+}
+
+.csv-import-parse-info {
+  margin: 0 1rem 0.35rem;
+  font-size: 0.74rem;
+  color: #0369a1;
+}
+
+.csv-import-parse-info--warn {
+  color: #b45309;
+}
+
+.csv-import-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin: 0 0.75rem 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.csv-import-backdrop--dark .csv-import-table-wrap {
+  border-color: #334155;
+}
+
+.csv-import-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.csv-import-table th,
+.csv-import-table td {
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.csv-import-backdrop--dark .csv-import-table th,
+.csv-import-backdrop--dark .csv-import-table td {
+  border-bottom-color: #334155;
+}
+
+.csv-import-table tr.is-fail {
+  background: #fff7ed;
+}
+
+.csv-import-backdrop--dark .csv-import-table tr.is-fail {
+  background: rgba(124, 45, 18, 0.2);
+}
+
+.csv-import-th-check {
+  width: 2.5rem;
+}
+
+.csv-import-td-name {
+  font-weight: 600;
+  max-width: 12rem;
+  word-break: break-word;
+}
+
+.csv-import-td-status {
+  max-width: 14rem;
+}
+
+.csv-import-match {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csv-import-footer {
+  padding: 0.55rem 1rem 0.85rem;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.csv-import-backdrop--dark .csv-import-footer {
+  border-top-color: #334155;
+}
+
+/* Map: CSV geocode preview markers (Leaflet divIcon) */
+.csv-preview-marker {
+  background: transparent;
+  border: none;
+}
+
+.csv-preview-marker-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 3px 0 0 2px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #14b8a6, #0d9488);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.95),
+    0 2px 8px rgba(15, 118, 110, 0.45);
+}
+
+.leaflet-tooltip.csv-preview-tooltip {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0f766e;
+  background: rgba(240, 253, 250, 0.96);
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+}
+
+.leaflet-tooltip.csv-preview-tooltip::before {
+  border-top-color: #99f6e4;
+}
+
+.csv-preview-tooltip-suffix {
+  font-weight: 500;
+  color: #64748b;
+}
+

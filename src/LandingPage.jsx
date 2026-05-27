@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { MapContainer, Marker, Tooltip, useMap } from 'react-leaflet'
 import {
   ArrowRight,
+  Activity,
   Beer,
   Check,
   ChevronRight,
@@ -121,6 +122,14 @@ const mapCatalog = [
     category: 'Night & hangouts',
     description:
       'Late-night spots that stay open—shared by the community so night-shift workers and friends always have somewhere to gather.',
+    status: 'available',
+  },
+  {
+    id: 'traffic-live',
+    title: 'Live Traffic',
+    category: 'Road status',
+    description:
+      'Real-time traffic flow and road incidents—pan the map to check conditions before you head out.',
     status: 'available',
   },
   {
@@ -442,6 +451,7 @@ function useLandingPreviewPins(userLocation) {
       'loo-finder': [],
       'restaurants-cafe': [],
       'tambayan-24hrs': [],
+      'traffic-live': [],
     }
 
     if (
@@ -479,6 +489,7 @@ function useLandingPreviewPins(userLocation) {
         'loo-finder': loos,
         'restaurants-cafe': restaurants,
         'tambayan-24hrs': tambayan,
+        'traffic-live': [],
       },
     }
   }, [pinsByCollection, userLocation])
@@ -731,8 +742,8 @@ export function LandingPage({ theme, setTheme, userLocation, onOpenMap }) {
           <p className="saas-section-kicker">Maps</p>
           <h2 id="maps-heading">Different topics, same spirit of sharing</h2>
           <p>
-            Each map is a volunteer-led layer—sanitation, food and drink, and late-night tambayan are
-            live today. More ideas may follow as neighbors step up to help.
+            Each map is a volunteer-led layer—sanitation, food and drink, late-night tambayan, and
+            live traffic view are available today. More ideas may follow as neighbors step up to help.
           </p>
         </div>
         <div className="saas-maps-grid">
@@ -749,6 +760,8 @@ export function LandingPage({ theme, setTheme, userLocation, onOpenMap }) {
                     <UtensilsCrossed size={20} strokeWidth={1.75} />
                   ) : item.id === 'tambayan-24hrs' ? (
                     <Moon size={20} strokeWidth={1.75} />
+                  ) : item.id === 'traffic-live' ? (
+                    <Activity size={20} strokeWidth={1.75} />
                   ) : item.id === 'water-refill' ? (
                     <Beer size={20} strokeWidth={1.75} />
                   ) : item.id === 'accessibility' ? (
@@ -773,7 +786,11 @@ export function LandingPage({ theme, setTheme, userLocation, onOpenMap }) {
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               {item.status === 'available' ? (
-                <button type="button" className="saas-btn saas-btn--primary" onClick={() => onOpenMap(item.id)}>
+                <button
+                  type="button"
+                  className="saas-btn saas-btn--primary"
+                  onClick={() => onOpenMap(item.id)}
+                >
                   Open map
                 </button>
               ) : (

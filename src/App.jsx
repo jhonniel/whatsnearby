@@ -20,17 +20,9 @@ import {
   signInWithPopup,
 } from 'firebase/auth'
 import {
-  AttributionControl,
-  MapContainer,
-  Marker,
-  Polyline,
-  Popup,
-  Tooltip,
-  useMap,
-  useMapEvents,
-} from 'react-leaflet'
-import {
+  AlertTriangle,
   Droplets,
+  Gauge,
   MirrorRound,
   Moon,
   ShowerHead,
@@ -42,8 +34,12 @@ import {
 import L from 'leaflet'
 import './App.css'
 import { auth, db, hasFirebaseConfig } from './firebase'
+import { CsvRestaurantImportPanel } from './CsvRestaurantImportPanel'
 import { LandingPage } from './LandingPage'
-import { ProtomapsBasemap } from './ProtomapsBasemap'
+import { MapTrafficPanel } from './MapTrafficPanel'
+import { TomTomCommunityMap } from './TomTomCommunityMap'
+import { fetchTomTomRoute } from './tomtom/fetchTomTomRoute'
+import { hasTomTomApiKey } from './tomtom/tomtomEnv'
 const EXTRA_ADMIN_UIDS = (import.meta.env.VITE_ADMIN_UIDS || '')
   .split(',')
   .map((s) => s.trim())
@@ -73,13 +69,6 @@ const tambayanIcon = L.divIcon({
   iconSize: [28, 28],
   iconAnchor: [14, 28],
   popupAnchor: [0, -28],
-})
-
-const userIcon = L.icon({
-  iconUrl: '/user-location-pin.png',
-  iconSize: [52, 52],
-  iconAnchor: [26, 52],
-  popupAnchor: [0, -46],
 })
 
 function BidetAmenityIcon({ size = 18 }) {
@@ -146,6 +135,13 @@ const MAP_REGISTRY = {
     tagline: '',
     pinIcon: toiletIcon,
   },
+  'traffic-live': {
+    path: '/live-traffic',
+    firestoreCollection: null,
+    mapTitle: 'Live Traffic',
+    tagline: 'Real-time traffic flow and incidents for your area. Pan the map to explore road conditions.',
+    pinIcon: toiletIcon,
+  },
 }
 
 /** Wi‑Fi / network fixes; generous timeout + cached fixes reduce false timeouts. */
@@ -166,6 +162,10 @@ const GEOLOCATION_RETRY_OPTIONS = {
 /** Max zoom for pinch and +/- (same on mobile WebView and desktop). Raster/vector layers overzoom past native tile zoom. */
 const MAP_MAX_ZOOM = 19
 
+function isTrafficLiveMap(mapId) {
+  return mapId === 'traffic-live'
+}
+
 function mapIdToPath(mapId) {
   return MAP_REGISTRY[mapId]?.path ?? '/'
 }
@@ -185,13 +185,6 @@ function mergeCollectionsForMapId(mapId) {
 
 function pinFirestoreCollection(pin) {
   return pin.collection || null
-}
-
-function markerIconForPin(pin, fallbackIcon) {
-  const c = pinFirestoreCollection(pin)
-  if (c === 'restaurants_cafes') return restaurantIcon
-  if (c === 'tambayan_24h') return tambayanIcon
-  return fallbackIcon ?? toiletIcon
 }
 
 function pinLabelCategoryKey(pin, activeMapId, activePinsCollection) {
@@ -507,93 +500,6 @@ function Stars({ value }) {
   )
 }
 
-function LocateMap({ center, zoom = 14 }) {
-  const map = useMap()
-  useEffect(() => {
-    map.setView(center, zoom)
-  }, [center, map, zoom])
-  return null
-}
-
-function MapEvents({ onMapClick, onCenterChange }) {
-  const map = useMapEvents({
-    click(event) {
-      onMapClick(event.latlng)
-    },
-    moveend() {
-      const current = map.getCenter()
-      onCenterChange([current.lat, current.lng])
-    },
-  })
-
-  useEffect(() => {
-    const current = map.getCenter()
-    onCenterChange([current.lat, current.lng])
-  }, [map, onCenterChange])
-
-  return null
-}
-
-/** Leaflet needs a size refresh when the map pane goes full-viewport or flex layout changes. */
-function MapInvalidateOnResize() {
-  const map = useMap()
-  useEffect(() => {
-    const el = map.getContainer()
-    const invalidate = () => map.invalidateSize({ animate: false })
-    invalidate()
-    const ro = new ResizeObserver(invalidate)
-    ro.observe(el)
-    window.addEventListener('resize', invalidate)
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', invalidate)
-    }
-  }, [map])
-  return null
-}
-
-function MapInstanceBridge({ onMapReady }) {
-  const map = useMap()
-  useEffect(() => {
-    onMapReady(map)
-  }, [map, onMapReady])
-  return null
-}
-
-function SelectedPinOverlayTracker({ selectedLocation, onPositionChange }) {
-  const updatePosition = (map, latlng) => {
-    try {
-      const point = map.latLngToContainerPoint(latlng)
-      onPositionChange({ x: point.x, y: point.y })
-    } catch {
-      // Map may not be fully initialized yet — caller will retry on next move/zoom/effect.
-    }
-  }
-
-  const map = useMapEvents({
-    move() {
-      if (selectedLocation) updatePosition(map, selectedLocation)
-    },
-    zoom() {
-      if (selectedLocation) updatePosition(map, selectedLocation)
-    },
-  })
-
-  useEffect(() => {
-    if (!selectedLocation) {
-      onPositionChange(null)
-      return
-    }
-    updatePosition(map, selectedLocation)
-    // Retry once on next animation frame in case the map size hasn't settled yet.
-    const raf = requestAnimationFrame(() => updatePosition(map, selectedLocation))
-    return () => cancelAnimationFrame(raf)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, onPositionChange, selectedLocation])
-
-  return null
-}
-
 function distanceInMeters(lat1, lon1, lat2, lon2) {
   const toRad = (value) => (value * Math.PI) / 180
   const earthRadius = 6371000
@@ -608,6 +514,7 @@ function distanceInMeters(lat1, lon1, lat2, lon2) {
 
 function App() {
   const mapShellRef = useRef(null)
+  const tomTomRoutingRef = useRef(null)
   const activeMapIdRef = useRef(null)
   const [remotePins, setRemotePins] = useState([])
   const [localPins, setLocalPins] = useState([])
@@ -624,6 +531,10 @@ function App() {
   const [filterRating, setFilterRating] = useState('all')
   const [filterCategory, setFilterCategory] = useState('all')
   const [mobileFilterMenuOpen, setMobileFilterMenuOpen] = useState(false)
+  const [csvImportOpen, setCsvImportOpen] = useState(false)
+  const [csvImportPanelKey, setCsvImportPanelKey] = useState(0)
+  const [csvMapPreviewPins, setCsvMapPreviewPins] = useState([])
+  const csvPreviewMapFitTimerRef = useRef(null)
   const [pinDetailModalPin, setPinDetailModalPin] = useState(null)
   const [lightboxImageUrl, setLightboxImageUrl] = useState('')
   const [selectedLocation, setSelectedLocation] = useState(null)
@@ -637,7 +548,22 @@ function App() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('whatsnearby-theme') || localStorage.getItem('loo-theme') || 'light',
   )
-  const [routeCoords, setRouteCoords] = useState([])
+  const [trafficFlowOn, setTrafficFlowOn] = useState(
+    () => localStorage.getItem('whatsnearby-traffic-flow') !== 'false',
+  )
+  const [trafficIncidentsOn, setTrafficIncidentsOn] = useState(
+    () => localStorage.getItem('whatsnearby-traffic-incidents') !== 'false',
+  )
+
+  const setTrafficFlowPreference = (next) => {
+    setTrafficFlowOn(next)
+    localStorage.setItem('whatsnearby-traffic-flow', next ? 'true' : 'false')
+  }
+
+  const setTrafficIncidentsPreference = (next) => {
+    setTrafficIncidentsOn(next)
+    localStorage.setItem('whatsnearby-traffic-incidents', next ? 'true' : 'false')
+  }
   const [routeSummary, setRouteSummary] = useState(null)
   const [routingForPinId, setRoutingForPinId] = useState(null)
   const [activeMapId, setActiveMapId] = useState(() => pathToMapId(window.location.pathname))
@@ -703,6 +629,10 @@ function App() {
     }
   }, [activeMapId])
 
+  const openMapFromLanding = (mapId) => {
+    setActiveMapId(mapId)
+  }
+
   useEffect(() => {
     if (!hasFirebaseConfig || !auth) return undefined
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -742,7 +672,7 @@ function App() {
     const frameId = requestAnimationFrame(() => {
       setRemotePins([])
       setLocalPins([])
-      setRouteCoords([])
+      tomTomRoutingRef.current?.clearRoutes?.()
       setRouteSummary(null)
       setSelectedLocation(null)
       setSelectedScreenPos(null)
@@ -796,6 +726,7 @@ function App() {
       } else {
         const coll = pinsCollectionForMapId(activeMapId)
         if (!coll) {
+          setRemotePins([])
           setLoadingPins(false)
           return
         }
@@ -878,11 +809,12 @@ function App() {
   const isAdmin = envAdmin || docAdmin
 
   const pins = useMemo(() => [...localPins, ...remotePins], [localPins, remotePins])
+
   const activePinsCollection = useMemo(() => pinsCollectionForMapId(activeMapId), [activeMapId])
   const activeMapConfig = MAP_REGISTRY[activeMapId] ?? MAP_REGISTRY['loo-finder']
-  const pinMarkerIcon = activeMapConfig.pinIcon ?? toiletIcon
-
+  const trafficLiveMap = isTrafficLiveMap(activeMapId)
   const visiblePins = useMemo(() => {
+    if (trafficLiveMap) return []
     let next = pins
     if (activeMapId === 'community-map' && filterCategory !== 'all') {
       next = next.filter((pin) => pinFirestoreCollection(pin) === filterCategory)
@@ -891,9 +823,43 @@ function App() {
       next = next.filter((pin) => pin.rating >= Number(filterRating))
     }
     return next
-  }, [pins, filterRating, filterCategory, activeMapId])
+  }, [pins, filterRating, filterCategory, activeMapId, trafficLiveMap])
+
+  useEffect(() => {
+    if (csvPreviewMapFitTimerRef.current) {
+      clearTimeout(csvPreviewMapFitTimerRef.current)
+      csvPreviewMapFitTimerRef.current = null
+    }
+    if (!mapInstance || csvMapPreviewPins.length === 0) return undefined
+    const pinsSnapshot = csvMapPreviewPins
+    csvPreviewMapFitTimerRef.current = setTimeout(() => {
+      csvPreviewMapFitTimerRef.current = null
+      try {
+        if (pinsSnapshot.length === 1) {
+          const [{ latitude, longitude }] = pinsSnapshot
+          mapInstance.setView([latitude, longitude], Math.max(mapInstance.getZoom(), 15), { animate: true })
+        } else {
+          mapInstance.fitBoundsFromPins(pinsSnapshot, { padding: 48, maxZoom: 16, animate: true })
+        }
+      } catch {
+        // ignore invalid coordinates / bounds
+      }
+    }, 380)
+    return () => {
+      if (csvPreviewMapFitTimerRef.current) {
+        clearTimeout(csvPreviewMapFitTimerRef.current)
+        csvPreviewMapFitTimerRef.current = null
+      }
+    }
+  }, [csvMapPreviewPins, mapInstance])
 
   const activeFilterSummary = useMemo(() => {
+    if (trafficLiveMap) {
+      const parts = []
+      if (trafficFlowOn) parts.push('Flow on')
+      if (trafficIncidentsOn) parts.push('Incidents on')
+      return parts.length ? parts.join(' • ') : 'Traffic layers off'
+    }
     const parts = []
     if (activeMapId === 'community-map' && filterCategory !== 'all') {
       const categoryLabel =
@@ -911,7 +877,7 @@ function App() {
       return 'Showing all pins'
     }
     return `Filtered by ${parts.join(' • ')}`
-  }, [activeMapId, filterCategory, filterRating])
+  }, [activeMapId, filterCategory, filterRating, trafficLiveMap, trafficFlowOn, trafficIncidentsOn])
 
   const showLooAmenitiesFieldset = useMemo(
     () =>
@@ -1235,6 +1201,7 @@ out tags qt 40;
   }
 
   const openPinForm = (latlng) => {
+    if (trafficLiveMap) return
     setPinDetailModalPin(null)
     setError('')
     setNotice('')
@@ -1417,6 +1384,14 @@ out tags qt 40;
       setError('Enable location first to get directions.')
       return
     }
+    if (!hasTomTomApiKey) {
+      setError('Add VITE_TOMTOM_API_KEY to use TomTom directions.')
+      return
+    }
+    if (!tomTomRoutingRef.current) {
+      setError('Map routing is still loading. Try again in a moment.')
+      return
+    }
 
     setError('')
     setNotice('')
@@ -1424,37 +1399,25 @@ out tags qt 40;
 
     try {
       const [startLat, startLng] = userLocation
-      const response = await withTimeout(
-        fetch(
-          `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${pin.longitude},${pin.latitude}?overview=full&geometries=geojson&alternatives=true`,
-        ),
-        12000,
+      const { routes, distanceMeters, durationSeconds, averageSpeedKmh } = await withTimeout(
+        fetchTomTomRoute(startLat, startLng, pin.latitude, pin.longitude),
+        20000,
         'Directions request timed out.',
       )
 
-      if (!response.ok) {
-        throw new Error('Could not fetch directions right now.')
-      }
+      await tomTomRoutingRef.current.showRoutes(routes)
 
-      const data = await response.json()
-      const routes = Array.isArray(data?.routes) ? data.routes : []
-      if (!routes.length) {
-        throw new Error('No route found to this destination.')
-      }
-
-      // OSRM returns fastest route first; re-check by duration.
-      const bestRoute = routes.reduce((best, current) =>
-        current.duration < best.duration ? current : best,
-      )
-
-      const coords = bestRoute.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]) ?? []
-      setRouteCoords(coords)
+      const distanceKm = (distanceMeters / 1000).toFixed(2)
+      const durationMin = Math.max(1, Math.round(durationSeconds / 60))
       setRouteSummary({
-        distanceKm: (bestRoute.distance / 1000).toFixed(2),
-        durationMin: Math.max(1, Math.round(bestRoute.duration / 60)),
+        distanceKm,
+        durationMin,
+        averageSpeedKmh,
         destinationName: pin.name,
       })
-      setNotice(`Best route ready: ${bestRoute.distance ? `${(bestRoute.distance / 1000).toFixed(2)} km` : ''}`)
+      const speedPart =
+        averageSpeedKmh != null ? `, ~${averageSpeedKmh} km/h avg` : ''
+      setNotice(`Route ready: ${distanceKm} km, about ${durationMin} min${speedPart} (TomTom).`)
     } catch (routeError) {
       setError(routeError.message || 'Failed to get directions.')
     } finally {
@@ -1941,7 +1904,7 @@ out tags qt 40;
         theme={theme}
         setTheme={setTheme}
         userLocation={userLocation}
-        onOpenMap={setActiveMapId}
+        onOpenMap={openMapFromLanding}
       />
     )
   }
@@ -2054,13 +2017,42 @@ out tags qt 40;
               <option value="1">1 star and up</option>
             </select>
           </label>
+          {trafficLiveMap ? (
+            <div className="mobile-filter-field mobile-filter-traffic">
+              <span className="mobile-filter-traffic-label">TomTom traffic</span>
+              <div className="mobile-filter-traffic-toggles">
+                <button
+                  type="button"
+                  className={`secondary map-traffic-toggle${trafficFlowOn ? ' is-active' : ''}`}
+                  aria-pressed={trafficFlowOn}
+                  onClick={() => setTrafficFlowPreference(!trafficFlowOn)}
+                >
+                  <Gauge size={14} strokeWidth={2.1} aria-hidden="true" />
+                  Traffic flow
+                </button>
+                <button
+                  type="button"
+                  className={`secondary map-traffic-toggle${trafficIncidentsOn ? ' is-active' : ''}`}
+                  aria-pressed={trafficIncidentsOn}
+                  onClick={() => setTrafficIncidentsPreference(!trafficIncidentsOn)}
+                >
+                  <AlertTriangle size={14} strokeWidth={2.1} aria-hidden="true" />
+                  Incidents
+                </button>
+              </div>
+            </div>
+          ) : null}
       </section>
 
       </div>
 
       {!pinDetailModalPin ? (
-        <div className="map-quick-actions map-quick-actions--floating" aria-label="Map position tools">
-          <button type="button" className="secondary" onClick={() => setActiveMapId(null)}>
+        <div className="map-quick-actions map-quick-actions--floating" aria-label="Map tools">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setActiveMapId(null)}
+          >
             Home
           </button>
           <button type="button" className="secondary" onClick={locateMe} disabled={isLocating}>
@@ -2073,13 +2065,33 @@ out tags qt 40;
               'Locate Me'
             )}
           </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
-          >
-            Pin At Center
-          </button>
+          {!trafficLiveMap ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => openPinForm({ lat: visibleCenter[0], lng: visibleCenter[1] })}
+            >
+              Pin At Center
+            </button>
+          ) : null}
+          {activeMapId === 'restaurants-cafe' || activeMapId === 'community-map' ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={!hasFirebaseConfig}
+              title={
+                !hasFirebaseConfig
+                  ? 'Add Firebase to save imported rows.'
+                  : 'Import restaurants from a CSV paste (name, address, rating, reviews, category, phone)'
+              }
+              onClick={() => {
+                setCsvImportPanelKey((k) => k + 1)
+                setCsvImportOpen(true)
+              }}
+            >
+              Import CSV
+            </button>
+          ) : null}
         </div>
       ) : null}
       {!selectedLocation && !showAuthModal && !pinDetailModalPin ? (
@@ -2089,95 +2101,64 @@ out tags qt 40;
           {routeSummary ? (
             <p className="map-notice map-notice--info">
               Route to <strong>{routeSummary.destinationName}</strong>: {routeSummary.distanceKm} km, about{' '}
-              {routeSummary.durationMin} min.
+              {routeSummary.durationMin} min
+              {routeSummary.averageSpeedKmh != null ? (
+                <>
+                  , ~<strong>{routeSummary.averageSpeedKmh}</strong> km/h avg
+                </>
+              ) : null}
+              .
             </p>
           ) : null}
         </div>
       ) : null}
 
       <section className="map-shell" ref={mapShellRef}>
-        <MapContainer
+        {trafficLiveMap ? (
+          <MapTrafficPanel
+            trafficFlowOn={trafficFlowOn}
+            trafficIncidentsOn={trafficIncidentsOn}
+            onTrafficFlowChange={setTrafficFlowPreference}
+            onTrafficIncidentsChange={setTrafficIncidentsPreference}
+          />
+        ) : null}
+        <TomTomCommunityMap
+          key={trafficLiveMap ? 'traffic' : 'map'}
+          className="map"
           center={mapCenter}
           zoom={14}
           minZoom={12}
           maxZoom={MAP_MAX_ZOOM}
-          className="map"
-          tap={false}
+          theme={theme}
           scrollWheelZoom={!isMobileViewport}
-          touchZoom
-          bounceAtZoomLimits={false}
-          zoomControl={false}
-          attributionControl={false}
-        >
-          <MapInstanceBridge onMapReady={setMapInstance} />
-          <MapInvalidateOnResize />
-          <LocateMap center={mapCenter} zoom={14} />
-          <MapEvents onMapClick={openPinForm} onCenterChange={setVisibleCenter} />
-          <SelectedPinOverlayTracker
-            selectedLocation={selectedLocation}
-            onPositionChange={setSelectedScreenPos}
-          />
-          <AttributionControl position="bottomleft" prefix={false} />
-          <ProtomapsBasemap
-            theme={theme}
-            fallbackAttribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-
-          {visiblePins.map((pin) => (
-            <Marker
-              key={pinBusyKey(pin)}
-              position={[pin.latitude, pin.longitude]}
-              icon={markerIconForPin(pin, pinMarkerIcon)}
-              eventHandlers={{
-                click: (e) => {
-                  L.DomEvent.stopPropagation(e)
-                  setPinDetailModalPin(pin)
-                },
-              }}
-            >
-              <Tooltip
-                permanent
-                direction="top"
-                offset={[0, -8]}
-                className={`pin-name-label pin-name-label--${pinLabelCategoryKey(
-                  pin,
-                  activeMapId,
-                  activePinsCollection,
-                )}`}
-              >
-                {pin.name || 'Unnamed place'}
-              </Tooltip>
-            </Marker>
-          ))}
-
-          {userLocation ? (
-            <Marker position={userLocation} icon={userIcon} zIndexOffset={10000}>
-              <Popup>You are here</Popup>
-            </Marker>
-          ) : null}
-
-          {selectedLocation ? (
-            <Marker
-              position={[selectedLocation.lat, selectedLocation.lng]}
-              icon={
-                formMode === 'create' && activeMapId === 'community-map' && newPinCategory
-                  ? markerIconForPin({ collection: newPinCategory }, pinMarkerIcon)
-                  : pinMarkerIcon
-              }
-            />
-          ) : null}
-
-          {routeCoords.length > 1 ? (
-            <Polyline
-              positions={routeCoords}
-              pathOptions={{
-                color: theme === 'dark' ? '#38bdf8' : '#2563eb',
-                weight: 5,
-                opacity: 0.9,
-              }}
-            />
-          ) : null}
-        </MapContainer>
+          trafficFlowEnabled={trafficLiveMap && trafficFlowOn}
+          trafficIncidentsEnabled={trafficLiveMap && trafficIncidentsOn}
+          onMapReady={setMapInstance}
+          onRoutingReady={(routing) => {
+            tomTomRoutingRef.current = routing
+          }}
+          onMapClick={trafficLiveMap ? undefined : openPinForm}
+          onCenterChange={setVisibleCenter}
+          onPinClick={setPinDetailModalPin}
+          selectedLocation={selectedLocation}
+          onSelectedScreenPosChange={setSelectedScreenPos}
+          visiblePins={visiblePins}
+          csvMapPreviewPins={csvMapPreviewPins}
+          userLocation={userLocation}
+          activeMapId={activeMapId}
+          activePinsCollection={activePinsCollection}
+          pinLabelCategoryKey={pinLabelCategoryKey}
+          formMode={formMode}
+          newPinCategory={newPinCategory}
+          defaultPinCollection={
+            activePinsCollection ||
+            (activeMapId === 'restaurants-cafe'
+              ? 'restaurants_cafes'
+              : activeMapId === 'tambayan-24hrs'
+                ? 'tambayan_24h'
+                : 'loos')
+          }
+        />
         {loadingPins ? (
           <div className="map-loading-overlay" role="status" aria-live="polite">
             <div className="map-loading-card">
@@ -2596,6 +2577,40 @@ out tags qt 40;
           />
         </section>
       ) : null}
+      <CsvRestaurantImportPanel
+        key={csvImportPanelKey}
+        open={csvImportOpen}
+        onClose={() => {
+          setCsvMapPreviewPins([])
+          setCsvImportOpen(false)
+        }}
+        theme={theme}
+        db={db}
+        hasFirebaseConfig={hasFirebaseConfig}
+        currentUser={currentUser}
+        onCsvPreviewChange={setCsvMapPreviewPins}
+        onImported={({ saved, failed, pins }) => {
+          setCsvMapPreviewPins([])
+          if (pins?.length) {
+            setLocalPins((current) => [...pins, ...current])
+            if (mapInstance) {
+              if (pins.length === 1) {
+                const [{ latitude: lat, longitude: lng }] = pins
+                mapInstance.setView([lat, lng], Math.max(mapInstance.getZoom(), 15), { animate: true })
+              } else {
+                mapInstance.fitBoundsFromPins(pins, { padding: 48, maxZoom: 16, animate: true })
+              }
+            }
+          }
+          if (saved > 0) {
+            setNotice(`Imported ${saved} restaurant row(s) from CSV.${failed ? ` ${failed} failed.` : ''}`)
+            setError('')
+          } else if (failed > 0) {
+            setError(`CSV import: ${failed} row(s) could not be saved.`)
+          }
+        }}
+        onError={(msg) => setError(msg)}
+      />
     </main>
   )
 }
